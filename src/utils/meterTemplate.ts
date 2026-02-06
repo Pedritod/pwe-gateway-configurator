@@ -97,15 +97,21 @@ export function getNextIndex(config: EdgeConfig): number {
  */
 /**
  * Convert function code and register address to N510 address format.
- * N510 uses format like "40010" where:
+ * N510 uses format like "40017" where:
  * - First digit is the function code prefix (3 -> 4, 4 -> 3, etc.)
- * - Remaining digits are the register address (0-based from meter datasheet)
+ * - Remaining digits are the 1-indexed register number
  *
  * Function code mapping (standard Modbus convention):
  * - FC 1 (coils) -> prefix 0
  * - FC 2 (discrete inputs) -> prefix 1
  * - FC 3 (holding registers) -> prefix 4
  * - FC 4 (input registers) -> prefix 3
+ *
+ * The gateway exports/displays the register as (address - 1), so we add 1
+ * to the register address to compensate. For example:
+ * - We want CSV to show 16
+ * - We send "40017" (16 + 1)
+ * - Gateway displays/exports 17 - 1 = 16 ✓
  */
 function formatN510Address(functionCode: number, registerAddress: number): string {
   // Map function code to address prefix
@@ -117,8 +123,10 @@ function formatN510Address(functionCode: number, registerAddress: number): strin
   };
 
   const prefix = prefixMap[functionCode] ?? 4; // Default to holding registers
-  // Format as prefix + address (keeping original 0-based from meter config)
-  return `${prefix}${registerAddress.toString().padStart(4, '0')}`;
+  // Add 1 to compensate for gateway's display offset
+  // Address 16 from config -> send "40017" -> gateway shows 16
+  const adjustedAddress = registerAddress + 1;
+  return `${prefix}${adjustedAddress.toString().padStart(4, '0')}`;
 }
 
 function generateDataPoints(
