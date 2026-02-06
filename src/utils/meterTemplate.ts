@@ -97,15 +97,22 @@ export function getNextIndex(config: EdgeConfig): number {
  */
 /**
  * Convert function code and register address to N510 address format.
- * N510 uses format like "40010" where:
+ * N510 uses format like "40017" where:
  * - First digit is the function code prefix (3 -> 4, 4 -> 3, etc.)
- * - Remaining digits are the register address (0-based from meter datasheet)
+ * - Remaining 4 digits are the 1-based Modbus register number
  *
  * Function code mapping (standard Modbus convention):
  * - FC 1 (coils) -> prefix 0
  * - FC 2 (discrete inputs) -> prefix 1
  * - FC 3 (holding registers) -> prefix 4
  * - FC 4 (input registers) -> prefix 3
+ *
+ * Standard Modbus notation uses 1-based register numbers:
+ * - 40001 = first holding register (address 0)
+ * - 40017 = seventeenth holding register (address 16)
+ *
+ * The registerAddress parameter from meterConfigs is the 0-based address.
+ * We add 1 to convert to 1-based register number for the N510 JSON API format.
  */
 function formatN510Address(functionCode: number, registerAddress: number): string {
   // Map function code to address prefix
@@ -117,8 +124,10 @@ function formatN510Address(functionCode: number, registerAddress: number): strin
   };
 
   const prefix = prefixMap[functionCode] ?? 4; // Default to holding registers
-  // Format as prefix + address (keeping original 0-based from meter config)
-  return `${prefix}${registerAddress.toString().padStart(4, '0')}`;
+  // Convert 0-based address to 1-based register number (standard Modbus notation)
+  // Address 16 -> register number 17 -> "40017"
+  const registerNumber = registerAddress + 1;
+  return `${prefix}${registerNumber.toString().padStart(4, '0')}`;
 }
 
 function generateDataPoints(
