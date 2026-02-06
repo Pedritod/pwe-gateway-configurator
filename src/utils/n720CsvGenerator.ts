@@ -18,22 +18,30 @@ export interface N720MeterConfig {
 }
 
 /**
- * Extract system entries from existing CSV content
- * System entries are SC and C lines that don't belong to user-defined meters
- * (e.g., system variables like mac, ip, time, etc.)
+ * Extract all existing entries from CSV content
+ * This preserves ALL SC and C lines from the existing configuration,
+ * which is important to keep system variables (mac, ip, time, etc.) working.
+ *
+ * @param existingCsv - The existing CSV content
+ * @param excludeDeviceNames - Optional list of device names to exclude (e.g., meters we're replacing)
  */
-export function extractSystemEntries(existingCsv: string): {
+export function extractExistingEntries(existingCsv: string, excludeDeviceNames: string[] = []): {
   scLines: string[];
-  cLines: string[];
+  stateLines: string[];
+  dataLines: string[];
 } {
   const scLines: string[] = [];
-  const cLines: string[] = [];
+  const stateLines: string[] = [];
+  const dataLines: string[] = [];
 
   if (!existingCsv) {
-    return { scLines, cLines };
+    return { scLines, stateLines, dataLines };
   }
 
   const lines = existingCsv.split(/\r?\n/).filter(line => line.trim());
+
+  // Normalize exclude list for comparison
+  const excludeSet = new Set(excludeDeviceNames.map(n => n.toLowerCase()));
 
   for (const line of lines) {
     // Skip header line
@@ -41,16 +49,32 @@ export function extractSystemEntries(existingCsv: string): {
       continue;
     }
 
-    // Check for system-related entries (typically named "System" or similar)
-    // These provide mac, ip, time, and other system variables
-    if (line.startsWith('SC,System') || line.startsWith('SC,system')) {
+    // Parse device name from the line (second field)
+    const parts = line.split(',');
+    const deviceName = parts[1] || '';
+    const deviceNameLower = deviceName.toLowerCase();
+
+    // Skip if this device is in the exclude list
+    if (excludeSet.has(deviceNameLower)) {
+      continue;
+    }
+
+    // Categorize the line
+    if (line.startsWith('SC,')) {
       scLines.push(line);
-    } else if (line.startsWith('C,System') || line.startsWith('C,system')) {
-      cLines.push(line);
+    } else if (line.startsWith('C,')) {
+      // Check if it's a state line (has "_state" in the point name or "State" in register field)
+      const pointName = parts[2] || '';
+      const registerField = parts[12] || '';
+      if (pointName.endsWith('_state') || registerField === 'State') {
+        stateLines.push(line);
+      } else {
+        dataLines.push(line);
+      }
     }
   }
 
-  return { scLines, cLines };
+  return { scLines, stateLines, dataLines };
 }
 
 /**
@@ -58,14 +82,14 @@ export function extractSystemEntries(existingCsv: string): {
  *
  * The N720 CSV format requires a specific ordering:
  * 1. Header line (V,V1.0,N7X0,;)
- * 2. ALL SC lines (slave configurations) first - including system entries
+ * 2. ALL SC lines (slave configurations) first - including existing entries
  * 3. ALL state point C lines
- * 4. ALL data point C lines - including system C lines
+ * 4. ALL data point C lines
  *
  * This ordering is critical - mixing SC and C lines per meter causes errors.
  *
  * @param meters - Array of meter configurations to add
- * @param existingCsv - Optional existing CSV to preserve system entries from
+ * @param existingCsv - Optional existing CSV to preserve entries from (e.g., system variables)
  */
 export function generateN720EdgeCsv(meters: N720MeterConfig[], existingCsv?: string): string {
   const lines: string[] = [];
@@ -76,16 +100,22 @@ export function generateN720EdgeCsv(meters: N720MeterConfig[], existingCsv?: str
   // Header line (required)
   lines.push('V,V1.0,N7X0,;');
 
-  // Preserve system entries from existing CSV if provided
+  // Get sanitized names of meters we're adding (to exclude from existing entries)
+  const newMeterNames = meters.map(m => {
+    const sanitized = m.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
+    return sanitized.substring(0, 14);
+  });
+
+  // Preserve existing entries from CSV, excluding meters we're replacing
   if (existingCsv) {
-    const systemEntries = extractSystemEntries(existingCsv);
-    scLines.push(...systemEntries.scLines);
-    // System C lines go after state lines but before data lines
-    // We'll add them separately
-    dataLines.push(...systemEntries.cLines);
+    const existingEntries = extractExistingEntries(existingCsv, newMeterNames);
+    scLines.push(...existingEntries.scLines);
+    stateLines.push(...existingEntries.stateLines);
+    dataLines.push(...existingEntries.dataLines);
+    console.log(`Preserved ${existingEntries.scLines.length} SC lines, ${existingEntries.stateLines.length} state lines, ${existingEntries.dataLines.length} data lines from existing config`);
   }
 
-  // Generate lines for each meter, separating by type
+  // Generate lines for each new meter, separating by type
   for (const meter of meters) {
     const {
       name: rawName,
