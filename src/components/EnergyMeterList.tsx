@@ -476,7 +476,19 @@ export function EnergyMeterList({ ip }: EnergyMeterListProps) {
         const metersToSave = isMultiDeviceTopic ? n720Meters : [n720Meters[0]];
         console.log(`N720 save: isMultiDeviceTopic=${isMultiDeviceTopic}, saving ${metersToSave.length} of ${n720Meters.length} meters`);
 
-        // Generate CSV for meters to save
+        // Download existing CSV to preserve system entries (mac, ip, time, etc.)
+        let existingCsv: string | undefined;
+        try {
+          const csvResult = await downloadEdgeCsv(ip);
+          if (csvResult.success && csvResult.csvContent) {
+            existingCsv = csvResult.csvContent;
+            console.log('Downloaded existing CSV to preserve system entries');
+          }
+        } catch (err) {
+          console.log('Could not download existing CSV, will create fresh config:', err);
+        }
+
+        // Generate CSV for meters to save, preserving system entries from existing config
         const meterConfigs: N720MeterConfig[] = metersToSave.map((m, index) => ({
           name: m.name,
           slaveAddress: m.slaveAddress,
@@ -484,7 +496,7 @@ export function EnergyMeterList({ ip }: EnergyMeterListProps) {
           meterIndex: index,
         }));
 
-        const csvContent = generateN720EdgeCsv(meterConfigs);
+        const csvContent = generateN720EdgeCsv(meterConfigs, existingCsv);
         console.log('Generated N720 CSV for all meters:', csvContent);
 
         // Upload CSV to gateway (configures Data Acquisition - RAM only)

@@ -18,17 +18,56 @@ export interface N720MeterConfig {
 }
 
 /**
+ * Extract system entries from existing CSV content
+ * System entries are SC and C lines that don't belong to user-defined meters
+ * (e.g., system variables like mac, ip, time, etc.)
+ */
+export function extractSystemEntries(existingCsv: string): {
+  scLines: string[];
+  cLines: string[];
+} {
+  const scLines: string[] = [];
+  const cLines: string[] = [];
+
+  if (!existingCsv) {
+    return { scLines, cLines };
+  }
+
+  const lines = existingCsv.split(/\r?\n/).filter(line => line.trim());
+
+  for (const line of lines) {
+    // Skip header line
+    if (line.startsWith('V,')) {
+      continue;
+    }
+
+    // Check for system-related entries (typically named "System" or similar)
+    // These provide mac, ip, time, and other system variables
+    if (line.startsWith('SC,System') || line.startsWith('SC,system')) {
+      scLines.push(line);
+    } else if (line.startsWith('C,System') || line.startsWith('C,system')) {
+      cLines.push(line);
+    }
+  }
+
+  return { scLines, cLines };
+}
+
+/**
  * Generate complete N720 edge CSV content for one or more meters
  *
  * The N720 CSV format requires a specific ordering:
  * 1. Header line (V,V1.0,N7X0,;)
- * 2. ALL SC lines (slave configurations) first
+ * 2. ALL SC lines (slave configurations) first - including system entries
  * 3. ALL state point C lines
- * 4. ALL data point C lines
+ * 4. ALL data point C lines - including system C lines
  *
  * This ordering is critical - mixing SC and C lines per meter causes errors.
+ *
+ * @param meters - Array of meter configurations to add
+ * @param existingCsv - Optional existing CSV to preserve system entries from
  */
-export function generateN720EdgeCsv(meters: N720MeterConfig[]): string {
+export function generateN720EdgeCsv(meters: N720MeterConfig[], existingCsv?: string): string {
   const lines: string[] = [];
   const scLines: string[] = [];
   const stateLines: string[] = [];
@@ -36,6 +75,15 @@ export function generateN720EdgeCsv(meters: N720MeterConfig[]): string {
 
   // Header line (required)
   lines.push('V,V1.0,N7X0,;');
+
+  // Preserve system entries from existing CSV if provided
+  if (existingCsv) {
+    const systemEntries = extractSystemEntries(existingCsv);
+    scLines.push(...systemEntries.scLines);
+    // System C lines go after state lines but before data lines
+    // We'll add them separately
+    dataLines.push(...systemEntries.cLines);
+  }
 
   // Generate lines for each meter, separating by type
   for (const meter of meters) {
