@@ -482,7 +482,12 @@ export function EnergyMeterList({ ip }: EnergyMeterListProps) {
           const csvResult = await downloadEdgeCsv(ip);
           if (csvResult.success && csvResult.csvContent) {
             existingCsv = csvResult.csvContent;
-            console.log('Downloaded existing CSV to preserve system entries');
+            console.log('Downloaded existing CSV to preserve system entries:');
+            console.log('=== EXISTING CSV START ===');
+            console.log(existingCsv);
+            console.log('=== EXISTING CSV END ===');
+          } else {
+            console.log('CSV download returned empty or failed:', csvResult);
           }
         } catch (err) {
           console.log('Could not download existing CSV, will create fresh config:', err);

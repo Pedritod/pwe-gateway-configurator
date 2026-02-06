@@ -146,13 +146,15 @@ export function generateN720EdgeCsv(meters: N720MeterConfig[], existingCsv?: str
     for (const dataPoint of meterConfig.dataPoints) {
       const pointName = `${dataPoint.name}_${slaveAddress}`;
       const dataTypeCode = getN720DataTypeCode(dataPoint.dataType);
-      const decimalPlaces = dataPoint.dataType.includes('float') ? 2 : 0;
-      const registerAddress = `${dataPoint.registerAddress}'`;
+      // Use 2 decimal places for 32-bit types (uint32, int32, float32), 0 for 16-bit types
+      const decimalPlaces = dataPoint.dataType.includes('32') ? 2 : 0;
+      // Register address with single trailing apostrophe (N720 format requirement)
+      const registerAddress = dataPoint.registerAddress;
       const pollingFlag = 1;
       const timeout = dataPoint.responseTimeout;
 
       dataLines.push(
-        `C,${name},${pointName},,${dataTypeCode},${decimalPlaces},0,0,0,0,0,,${registerAddress},0,0,${pollingFlag},${timeout},0,${decimalPlaces},,;`
+        `C,${name},${pointName},,${dataTypeCode},${decimalPlaces},0,0,0,0,0,,${registerAddress}',0,0,${pollingFlag},${timeout},0,${decimalPlaces},,;`
       );
     }
   }
