@@ -35,6 +35,65 @@ const httpClient = axios.create({
   validateStatus: () => true, // Don't throw on any status code
 });
 
+// N720 Reporting Fields by Meter Type
+// These are the fields that get included in the report template JSON
+const N720_REPORTING_FIELDS = {
+  'XMC34F': [
+    'v_l1', 'v_l2', 'v_l3', 'i_l1', 'i_l2', 'i_l3',
+    'p_l1', 'p_l2', 'p_l3', 'freq', 'q_l1', 'q_l2', 'q_l3',
+    'p_tot', 'q_tot', 's_tot', 'pf_tot', 'e_tot', 'e_q_tot',
+    'pf_sgn_tot', 'p_sgn_tot', 'q_sgn_tot',
+    'p_sgn_l1', 'p_sgn_l2', 'p_sgn_l3',
+    'q_sgn_l1', 'q_sgn_l2', 'q_sgn_l3',
+    'ktv', 'kta'
+  ],
+  'EM4371': [
+    'v_l1', 'v_l2', 'v_l3', 'v_l1_l2', 'v_l3_l2', 'v_l1_l3',
+    'i_l1', 'i_l2', 'i_l3',
+    'p_l1', 'p_l2', 'p_l3',
+    'pf_l1', 'pf_l2', 'pf_l3',
+    'freq', 'q_l1', 'q_l2', 'q_l3',
+    's_l1', 's_l2', 's_l3',
+    'e_tot', 'ct_ratio', 'pt_ratio', 'wiring_mode'
+  ],
+  'Sfere720': [
+    'v_l1', 'v_l2', 'v_l3', 'i_l1', 'i_l2', 'i_l3', 'i_tot',
+    'p_l1', 'p_l2', 'p_l3', 'p_tot', 'freq',
+    'q_l1', 'q_l2', 'q_l3', 'q_tot',
+    's_l1', 's_l2', 's_l3', 's_tot',
+    'pf_l1', 'pf_l2', 'pf_l3', 'pf_tot',
+    'e_l1', 'e_l2', 'e_l3', 'e_tot', 'e_q_tot',
+    'thd_v_l1', 'thd_v_l2', 'thd_v_l3',
+    'thd_i_l1', 'thd_i_l2', 'thd_i_l3'
+  ],
+  'EnergyNG9': [
+    'v_l1', 'v_l2', 'v_l3',
+    'i_l1', 'i_l2', 'i_l3', 'i_l4', 'i_l5', 'i_l6', 'i_l7', 'i_l8', 'i_l9', 'i_tot',
+    's_l1', 's_l2', 's_l3', 's_l4', 's_l5', 's_l6', 's_l7', 's_l8', 's_l9', 's_tot',
+    'p_l1', 'p_l2', 'p_l3', 'p_l4', 'p_l5', 'p_l6', 'p_l7', 'p_l8', 'p_l9', 'p_tot',
+    'q_l1', 'q_l2', 'q_l3',
+    'pf_l1', 'pf_l2', 'pf_l3',
+    'freq',
+    'e_l1', 'e_l2', 'e_l3', 'e_tot', 'e_neg_tot'
+  ],
+  'TAC4300': [
+    'v_l1', 'v_l2', 'v_l3', 'i_l1', 'i_l2', 'i_l3', 'i_tot',
+    'p_l1', 'p_l2', 'p_l3', 'p_tot', 'freq',
+    'q_l1', 'q_l2', 'q_l3',
+    's_l1', 's_l2', 's_l3', 's_tot',
+    'pf_l1', 'pf_l2', 'pf_l3',
+    'e_l1', 'e_l2', 'e_l3', 'e_tot', 'e_neg_tot',
+    'i_max_l1', 'i_max_l2', 'i_max_l3',
+    'thd_v_l1', 'thd_v_l2', 'thd_v_l3',
+    'thd_i_l1', 'thd_i_l2', 'thd_i_l3'
+  ]
+};
+
+// Helper function to get reporting fields for a meter type
+function getN720ReportingFields(meterType) {
+  return N720_REPORTING_FIELDS[meterType] || N720_REPORTING_FIELDS['XMC34F'];
+}
+
 // Helper function to check if an IP is reachable from local network
 function isIpReachable(gatewayIp, localInterfaces) {
   const gatewayParts = gatewayIp.split('.').map(Number);
@@ -2143,13 +2202,15 @@ app.post('/api/upload-nv-config', async (req, res) => {
 
     for (const endpoint of endpoints) {
       const uploadUrl = `${protocol}://${host}${endpoint}`;
-      console.log(`Uploading to: ${uploadUrl} (filename: ${configName})`);
+      // For edge CSV, use filename 'conf' to match /upload/edge behavior
+      const actualFilename = configName === 'edge' ? 'conf' : configName;
+      console.log(`Uploading to: ${uploadUrl} (filename: ${actualFilename})`);
 
       // Use form-data library - N720 expects field name "c"
       const FormDataNode = (await import('form-data')).default;
       const formData = new FormDataNode();
       formData.append('c', contentBuffer, {
-        filename: configName,  // e.g., "edge_report", "link", "edge_link_ctrl"
+        filename: actualFilename,
         contentType: 'application/octet-stream'
       });
 
@@ -2191,6 +2252,515 @@ app.post('/api/upload-nv-config', async (req, res) => {
     res.status(500).json({
       error: 'Failed to upload config to flash',
       details: String(error),
+    });
+  }
+});
+
+// Upload to /upload/template endpoint (matches native UI Save Current flow)
+app.post('/api/upload-template', async (req, res) => {
+  const { host, content } = req.body;
+
+  if (!host) {
+    return res.status(400).json({ error: 'Missing host parameter' });
+  }
+
+  console.log(`\n=== Uploading to /upload/template at ${host} ===`);
+
+  const headers = {
+    'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+  };
+
+  if (host.includes('ngrok')) {
+    headers['ngrok-skip-browser-warning'] = 'true';
+  }
+
+  try {
+    const protocol = host.includes('ngrok') ? 'https' : 'http';
+    const uploadUrl = `${protocol}://${host}/upload/template`;
+
+    const FormDataNode = (await import('form-data')).default;
+    const formData = new FormDataNode();
+
+    // Native UI sends empty content or minimal content
+    const contentBuffer = Buffer.from(content || '', 'utf8');
+    formData.append('c', contentBuffer, {
+      filename: 'template',
+      contentType: 'application/octet-stream'
+    });
+
+    const response = await httpClient.post(uploadUrl, formData, {
+      headers: {
+        ...headers,
+        ...formData.getHeaders()
+      },
+      timeout: 30000,
+    });
+
+    console.log('Template upload response:', response.status, response.data);
+    res.json({ success: response.status === 200, data: response.data });
+  } catch (error) {
+    console.error('Template upload error:', error.message);
+    res.status(500).json({ error: 'Template upload failed', details: error.message });
+  }
+});
+
+// Upload to /upload/conver_csv endpoint (finalizes Save Current flow)
+app.post('/api/upload-conver-csv', async (req, res) => {
+  const { host } = req.body;
+
+  if (!host) {
+    return res.status(400).json({ error: 'Missing host parameter' });
+  }
+
+  console.log(`\n=== Uploading to /upload/conver_csv at ${host} ===`);
+
+  const headers = {
+    'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+  };
+
+  if (host.includes('ngrok')) {
+    headers['ngrok-skip-browser-warning'] = 'true';
+  }
+
+  try {
+    const protocol = host.includes('ngrok') ? 'https' : 'http';
+    const uploadUrl = `${protocol}://${host}/upload/conver_csv`;
+
+    const FormDataNode = (await import('form-data')).default;
+    const formData = new FormDataNode();
+
+    // Native UI sends empty form data
+    formData.append('c', Buffer.from(''), {
+      filename: 'conver_csv',
+      contentType: 'application/octet-stream'
+    });
+
+    const response = await httpClient.post(uploadUrl, formData, {
+      headers: {
+        ...headers,
+        ...formData.getHeaders()
+      },
+      timeout: 30000,
+    });
+
+    console.log('Conver_csv upload response:', response.status, response.data);
+    res.json({ success: response.status === 200, data: response.data });
+  } catch (error) {
+    console.error('Conver_csv upload error:', error.message);
+    res.status(500).json({ error: 'Conver_csv upload failed', details: error.message });
+  }
+});
+
+// Complete N720 Save Current sequence - EXACT native UI replication
+// Sequence from native UI capture (with report group):
+// 1. POST /upload/edge (CSV with filename="conf")
+// 2. POST /upload/nv1 (link with prefix 80 a4 d0 09 + {"tcpc":[]})
+// 3. POST /upload/nv2 (link with same content)
+// Simple CSV-only upload endpoint
+// User will click "Save Current + Restart" in native UI to complete the process
+app.post('/api/upload-edge-csv', async (req, res) => {
+  const { host, csvContent } = req.body;
+
+  if (!host || !csvContent) {
+    return res.status(400).json({ success: false, error: 'Missing host or csvContent' });
+  }
+
+  console.log(`\n=== UPLOAD EDGE CSV to ${host} ===`);
+  console.log(`CSV length: ${csvContent.length} bytes`);
+
+  const headers = {
+    'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+  };
+
+  if (host.includes('ngrok')) {
+    headers['ngrok-skip-browser-warning'] = 'true';
+  }
+
+  const protocol = host.includes('ngrok') ? 'https' : 'http';
+
+  try {
+    // Create multipart form data - exact format from native UI
+    const boundaryId = 'WebKitFormBoundary' + Math.random().toString(36).substring(2, 15);
+    const boundary = `----${boundaryId}`;
+
+    const csvBuffer = Buffer.from(csvContent, 'utf8');
+    const bodyStart = Buffer.from(
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="c"; filename="conf"\r\n` +
+      `Content-Type: application/octet-stream\r\n` +
+      `\r\n`
+    );
+    const bodyEnd = Buffer.from(`\r\n\r\n--${boundary}--\r\n`);
+    const body = Buffer.concat([bodyStart, csvBuffer, bodyEnd]);
+
+    console.log(`Uploading CSV to /upload/edge...`);
+    console.log(`Boundary: ${boundary}`);
+    console.log(`Body length: ${body.length}`);
+
+    const response = await httpClient.post(`${protocol}://${host}/upload/edge`, body, {
+      headers: {
+        ...headers,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        'Content-Length': body.length,
+      },
+      timeout: 30000,
+    });
+
+    console.log(`Upload response: ${response.status}`);
+
+    if (response.status === 200) {
+      res.json({ success: true });
+    } else {
+      res.json({ success: false, error: `Upload failed with status ${response.status}` });
+    }
+  } catch (error) {
+    console.error('Upload CSV error:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// N720 Save Current - SINGLE PHASE with ONE restart
+// All uploads (CSV, link, template, edge_report) done first, then ONE restart
+// This matches the working pattern from direct testing
+app.post('/api/n720-save-current', async (req, res) => {
+  console.log('\n=== N720 SAVE CURRENT (Single Phase: All uploads, then ONE restart) ===');
+
+  const { host, csvContent, restart, meters, reportTopic, reportingInterval } = req.body;
+
+  if (!host) {
+    return res.status(400).json({ error: 'Missing host parameter' });
+  }
+
+  console.log(`\n=== N720 SAVE CURRENT at ${host} ===`);
+  console.log(`Meters: ${meters?.length || 0}, Topic: ${reportTopic || 'UploadTopic'}, Interval: ${reportingInterval || 60}s`);
+  console.log('Meter details:', JSON.stringify(meters, null, 2));
+
+  const headers = {
+    'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+  };
+
+  if (host.includes('ngrok')) {
+    headers['ngrok-skip-browser-warning'] = 'true';
+  }
+
+  const protocol = host.includes('ngrok') ? 'https' : 'http';
+  const results = [];
+
+  // Helper to upload multipart form data with retry logic
+  const uploadMultipart = async (endpoint, filename, data, stepNum, maxRetries = 3) => {
+    const boundaryId = 'WebKitFormBoundary' + Math.random().toString(36).substring(2, 15);
+    const boundary = `----${boundaryId}`;
+    let body;
+
+    if (Buffer.isBuffer(data)) {
+      const bodyStart = Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="c"; filename="${filename}"\r\n` +
+        `Content-Type: application/octet-stream\r\n` +
+        `\r\n`
+      );
+      const bodyEnd = Buffer.from(`\r\n--${boundary}--\r\n`);
+      body = Buffer.concat([bodyStart, data, bodyEnd]);
+      console.log(`  -> Upload ${filename} to ${endpoint} (binary, ${data.length} bytes)`);
+    } else {
+      const dataBuffer = Buffer.from(data, 'utf8');
+      const bodyStart = Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="c"; filename="${filename}"\r\n` +
+        `Content-Type: application/octet-stream\r\n` +
+        `\r\n`
+      );
+      const bodyEnd = Buffer.from(`\r\n--${boundary}--\r\n`);
+      body = Buffer.concat([bodyStart, dataBuffer, bodyEnd]);
+      console.log(`  -> Upload ${filename} to ${endpoint} (text, ${dataBuffer.length} bytes)`);
+    }
+
+    let lastError;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await httpClient.post(`${protocol}://${host}${endpoint}`, body, {
+          headers: {
+            ...headers,
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+            'Content-Length': body.length,
+          },
+          timeout: 60000,
+          maxBodyLength: Infinity,
+        });
+
+        console.log(`Step ${stepNum} response:`, response.status, '- Body:', JSON.stringify(response.data));
+        results.push({ step: stepNum, endpoint, status: response.status, data: response.data });
+        return response;
+      } catch (err) {
+        lastError = err;
+        console.log(`  -> Attempt ${attempt}/${maxRetries} failed: ${err.message}`);
+        if (attempt < maxRetries) {
+          console.log(`  -> Waiting 3 seconds before retry...`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
+    }
+    throw lastError;
+  };
+
+  try {
+    // ============================================
+    // CORRECT SEQUENCE (per user advice):
+    // Phase 1: Save Data Acquisition FIRST
+    //   1. POST /upload/edge (CSV)
+    //   2. GET /download_flex.cgi
+    //   3. POST /upload/nv1 (link)
+    //   4. POST /upload/nv2 (link)
+    //   5. GET /download_flex.cgi
+    //   6. POST /upload/conver_csv
+    //   7. GET /action_restart.cgi
+    //   8. Wait 30 seconds for restart
+    //
+    // Phase 2: Save Report Groups
+    //   9. POST /upload/template
+    //   10. POST /upload/nv1 (edge_report)
+    //   11. POST /upload/nv2 (edge_report)
+    //   12. GET /action_restart.cgi
+    // ============================================
+
+    const csvLines = csvContent.split('\n');
+    let deviceName = 'System_Slave';
+    for (const line of csvLines) {
+      if (line.startsWith('SC,') && !line.includes('System_Slave')) {
+        const parts = line.split(',');
+        if (parts[1]) {
+          deviceName = parts[1];
+          break;
+        }
+      }
+    }
+
+    // Build template and edge_report data upfront
+    const topic = reportTopic || 'UploadTopic';
+    const period = reportingInterval || 60;
+    let templateContent = '';
+    let edgeReportData = null;
+    let groups = [];
+
+    // Check if using ThingsBoard gateway topic format
+    const isGatewayTopic = topic === 'v1/gateway/telemetry' || topic === '/v1/gateway/telemetry';
+
+    if (meters && meters.length > 0) {
+      // WORKING APPROACH: Use tmpl_file with /upload/template + /upload/nv1 with binary prefix
+      // This is exactly what the native UI does (verified from HAR)
+      const templateLines = [];
+
+      console.log('DEBUG: Meters received from frontend:', JSON.stringify(meters, null, 2));
+
+      for (let i = 0; i < meters.length; i++) {
+        const meter = meters[i];
+        console.log(`DEBUG: Meter ${i} name: "${meter.name}"`);
+        const meterIndex = meter.meterIndex || (i + 1);
+        const reportingFields = getN720ReportingFields(meter.meterType);
+
+        // Build field mappings
+        // Key = base field name (e.g., "v_l1"), Value = field with meter index suffix (e.g., "v_l1_2")
+        const fieldsObj = {};
+        for (const field of reportingFields) {
+          const fieldWithIndex = `${field}_${meterIndex}`;
+          fieldsObj[field] = fieldWithIndex;  // Key without suffix, value with suffix
+        }
+
+        let templateObj;
+        if (isGatewayTopic) {
+          // ThingsBoard gateway format: {"Device":[{"ts":"sys_timestamp_ms","values":{...}}]}
+          templateObj = {};
+          templateObj[meter.name] = [{
+            ts: 'sys_timestamp_ms',
+            values: fieldsObj
+          }];
+        } else {
+          // Simple flat format (same as N510): {"field":"field",...,"time":"sys_timestamp_ms"}
+          templateObj = { ...fieldsObj, time: 'sys_timestamp_ms' };
+        }
+        templateLines.push(`Report${i}:${JSON.stringify(templateObj)}`);
+
+        // Create report group referencing template file
+        // Note: Topic should NOT have leading slash
+        // Use simple "Report{N}" name format as seen in working HAR files
+        groups.push({
+          name: `Report${i + 1}`,
+          link: 'MQTT1',
+          topic: topic.startsWith('/') ? topic.substring(1) : topic,
+          qos: 1,
+          retention: 0,
+          cond: {
+            period: period,
+            timed: { type: 0, hh: 0, mm: 0 }
+          },
+          data_report_type: 0,
+          change_report_type: 0,
+          err_enable: 0,
+          err_info: 'error',
+          tmpl_file: `/template/Report${i}.json`,
+          fkey_md5: '00000000000000000000000000000000',
+          ucld_node: []
+        });
+      }
+
+      templateContent = templateLines.join('\n') + '\n';
+
+      // Build edge_report with CRC32 prefix (discovered from HAR analysis!)
+      // The prefix is the CRC32 checksum of the JSON content in LITTLE-ENDIAN byte order
+      const edgeReportJson = JSON.stringify({ group: groups });
+
+      // CRC32 implementation (standard polynomial 0xEDB88320)
+      function crc32(buffer) {
+        let crc = 0xFFFFFFFF;
+        for (let i = 0; i < buffer.length; i++) {
+          crc ^= buffer[i];
+          for (let j = 0; j < 8; j++) {
+            crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
+          }
+        }
+        return (crc ^ 0xFFFFFFFF) >>> 0;
+      }
+
+      // Calculate CRC32 of the JSON string
+      const jsonBuffer = Buffer.from(edgeReportJson);
+      const crc = crc32(jsonBuffer);
+
+      // Convert CRC32 to little-endian 4-byte buffer
+      const edgeReportPrefix = Buffer.alloc(4);
+      edgeReportPrefix.writeUInt32LE(crc, 0);
+
+      console.log(`CRC32 of edge_report JSON: 0x${crc.toString(16)} -> prefix: ${edgeReportPrefix.toString('hex')}`);
+      edgeReportData = Buffer.concat([edgeReportPrefix, jsonBuffer]);
+
+      console.log('Template content:', templateContent);
+      console.log('edge_report JSON:', edgeReportJson);
+    }
+
+    // ============ SIMPLIFIED SEQUENCE WITH CRC32 PREFIX ============
+    // Now that we have the correct CRC32 prefix calculation, use simpler sequence:
+    // 1. Upload CSV for data acquisition
+    // 2. Upload template + edge_report (with CRC32 prefix)
+    // 3. Restart ONCE
+
+    let stepNum = 1;
+
+    console.log('\n=== SAVING ALL CONFIGURATION ===');
+
+    // Step 1: Upload CSV for data acquisition
+    console.log(`Step ${stepNum}: POST /upload/edge (CSV)...`);
+    await uploadMultipart('/upload/edge', 'conf', csvContent, stepNum++);
+
+    // Step 2: GET download_flex.cgi
+    console.log(`Step ${stepNum}: GET /download_flex.cgi?name=edge&ext=${deviceName}...`);
+    try {
+      await httpClient.get(`${protocol}://${host}/download_flex.cgi?name=edge&ext=${deviceName}`, { headers, timeout: 10000 });
+      results.push({ step: stepNum++, endpoint: '/download_flex.cgi', status: 200 });
+    } catch (e) {
+      console.log(`Step ${stepNum} warning:`, e.message);
+      stepNum++;
+    }
+
+    // Step 3: Upload link to nv1
+    console.log(`Step ${stepNum}: POST /upload/nv1 (link)...`);
+    const linkPrefix = Buffer.from([0x80, 0xa4, 0xd0, 0x09]);
+    const linkJson = '{"tcpc":[]}';
+    const linkData = Buffer.concat([linkPrefix, Buffer.from(linkJson)]);
+    await uploadMultipart('/upload/nv1', 'link', linkData, stepNum++);
+
+    // Step 4: Upload link to nv2
+    console.log(`Step ${stepNum}: POST /upload/nv2 (link)...`);
+    await uploadMultipart('/upload/nv2', 'link', linkData, stepNum++);
+
+    // Step 5-7: Upload template + edge_report (with CRC32 prefix)
+    if (meters && meters.length > 0 && edgeReportData) {
+      console.log(`Step ${stepNum}: POST /upload/template...`);
+      await uploadMultipart('/upload/template', 'report', templateContent, stepNum++);
+
+      console.log(`Step ${stepNum}: POST /upload/nv1 (edge_report with CRC32 prefix)...`);
+      await uploadMultipart('/upload/nv1', 'edge_report', edgeReportData, stepNum++);
+
+      console.log(`Step ${stepNum}: POST /upload/nv2 (edge_report with CRC32 prefix)...`);
+      await uploadMultipart('/upload/nv2', 'edge_report', edgeReportData, stepNum++);
+    }
+
+    // Step 8: GET download_flex.cgi again
+    console.log(`Step ${stepNum}: GET /download_flex.cgi?name=edge&ext=${deviceName}...`);
+    try {
+      await httpClient.get(`${protocol}://${host}/download_flex.cgi?name=edge&ext=${deviceName}`, { headers, timeout: 10000 });
+      results.push({ step: stepNum++, endpoint: '/download_flex.cgi', status: 200 });
+    } catch (e) {
+      console.log(`Step ${stepNum} warning:`, e.message);
+      stepNum++;
+    }
+
+    // Step 9: Upload conver_csv
+    console.log(`Step ${stepNum}: POST /upload/conver_csv...`);
+    const converCsvContent = 'S,1,6,10,JSON\r\n';
+    await uploadMultipart('/upload/conver_csv', 'conver_csv', converCsvContent, stepNum++);
+
+    // Step 10: RESTART
+    console.log(`Step ${stepNum}: RESTART...`);
+    try {
+      await httpClient.get(`${protocol}://${host}/action_restart.cgi`, { headers, timeout: 5000 });
+    } catch (e) { /* Expected - connection drops */ }
+    results.push({ step: stepNum++, endpoint: '/action_restart.cgi', status: 200 });
+    console.log('RESTART command sent, waiting for gateway to restart...');
+
+    // Wait for gateway to restart and come back online
+    // Poll /action_tf.cgi?act=getinfo like the native UI does
+    console.log('Polling gateway to check when it comes back online...');
+    const maxWaitTime = 60000; // 60 seconds max
+    const pollInterval = 3000; // Poll every 3 seconds
+    const startTime = Date.now();
+    let gatewayOnline = false;
+
+    // Initial wait before first poll (gateway needs time to start rebooting)
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
+    while (Date.now() - startTime < maxWaitTime) {
+      try {
+        const pollResponse = await httpClient.get(`${protocol}://${host}/action_tf.cgi?act=getinfo`, {
+          headers,
+          timeout: 5000,
+        });
+        if (pollResponse.status === 200) {
+          console.log('Gateway is back online!');
+          console.log('TF Card status:', pollResponse.data);
+          gatewayOnline = true;
+          results.push({ step: stepNum, endpoint: '/action_tf.cgi?act=getinfo', status: 200, data: pollResponse.data });
+          break;
+        }
+      } catch (pollErr) {
+        console.log(`Gateway not ready yet (${Math.round((Date.now() - startTime) / 1000)}s elapsed)...`);
+      }
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+
+    if (!gatewayOnline) {
+      console.log('Warning: Gateway did not respond within timeout, but restart was initiated');
+    }
+
+    // NOTE: N720 requires a SECOND restart to fully activate MQTT
+    // For now, we skip the automatic second restart to prevent report group issues.
+    // User should manually restart the gateway again via the UI if MQTT is not connecting.
+
+    console.log('\n=== SAVE COMPLETE ===');
+    res.json({
+      success: true,
+      message: 'Configuration saved. Note: For MQTT to activate on N720, you may need to restart the gateway manually one more time.',
+      results,
+      restarted: true,
+      gatewayOnline,
+    });
+  } catch (error) {
+    console.error('Save Current error:', error.message);
+    console.error('Full error:', error);
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({
+      error: 'Save Current failed',
+      details: error.message,
+      stack: error.stack,
+      results,
     });
   }
 });
@@ -2255,6 +2825,178 @@ app.get('/api/download-edge-csv', async (req, res) => {
       details: String(error),
     });
   }
+});
+
+// Download template files from N720 gateway
+// Templates are stored at /template/Report0.json, /template/Report1.json, etc.
+// These contain the original meter names in the template content
+app.get('/api/download-n720-templates', async (req, res) => {
+  const host = req.query.host;
+  const count = parseInt(req.query.count) || 10; // Max templates to try
+
+  if (!host) {
+    return res.status(400).json({ error: 'Missing host parameter' });
+  }
+
+  console.log(`\n=== Downloading N720 templates from ${host} ===`);
+
+  const headers = {
+    'Authorization': 'Basic ' + Buffer.from('admin:admin').toString('base64'),
+  };
+
+  if (host.includes('ngrok')) {
+    headers['ngrok-skip-browser-warning'] = 'true';
+  }
+
+  const protocol = host.includes('ngrok') ? 'https' : 'http';
+  const templates = [];
+
+  // First, try to download the entire template file at once
+  // Templates are uploaded as "Report0:{json}\nReport1:{json}\n" format
+  // Try multiple possible endpoint names
+  const bulkEndpoints = [
+    '/download_file.cgi?name=template',
+    '/download_file.cgi?name=report',
+    '/download_nv.cgi?name=template',
+    '/download_nv.cgi?name=report',
+  ];
+
+  for (const endpoint of bulkEndpoints) {
+    if (templates.length > 0) break;
+
+    try {
+      const bulkUrl = `${protocol}://${host}${endpoint}`;
+      console.log(`Trying bulk template download: ${bulkUrl}`);
+
+    const bulkResponse = await httpClient.get(bulkUrl, {
+      headers,
+      timeout: 10000,
+      responseType: 'text',
+    });
+
+    if (bulkResponse.status === 200 && bulkResponse.data) {
+      const content = String(bulkResponse.data);
+      console.log(`Bulk template download: ${content.length} bytes`);
+      console.log(`First 200 chars: ${content.substring(0, 200)}`);
+
+      // Parse the format: "Report0:{json}\nReport1:{json}\n"
+      const lines = content.split('\n').filter(line => line.trim());
+      for (const line of lines) {
+        const colonIndex = line.indexOf(':');
+        if (colonIndex > 0) {
+          const reportName = line.substring(0, colonIndex).trim();
+          const jsonContent = line.substring(colonIndex + 1).trim();
+
+          const match = reportName.match(/Report(\d+)/);
+          if (match) {
+            const index = parseInt(match[1], 10);
+            try {
+              const template = JSON.parse(jsonContent);
+              const meterNames = Object.keys(template).filter(
+                key => !key.startsWith('sys_') && key !== 'time'
+              );
+              if (meterNames.length > 0) {
+                templates.push({
+                  index,
+                  name: meterNames[0],
+                  template,
+                });
+                console.log(`${reportName}: Found meter name = "${meterNames[0]}"`);
+              }
+            } catch (parseErr) {
+              console.log(`${reportName}: Failed to parse JSON - ${parseErr.message}`);
+            }
+          }
+        }
+      }
+
+      if (templates.length > 0) {
+        console.log(`Found ${templates.length} templates from bulk download via ${endpoint}`);
+      }
+    }
+  } catch (bulkErr) {
+    console.log(`Bulk template download via ${endpoint} failed: ${bulkErr.message}`);
+  }
+  }
+
+  // If bulk download worked, return results
+  if (templates.length > 0) {
+    return res.json({ success: true, templates });
+  }
+
+  // Fallback: Try to download template files individually (Report0.json, Report1.json, etc.)
+  // Try multiple path formats as the gateway may serve them differently
+  const pathFormats = [
+    (i) => `/template/Report${i}.json`,      // Standard path from tmpl_file
+    (i) => `/Report${i}.json`,               // Root path
+    (i) => `/download_file.cgi?name=template/Report${i}`,  // Via download_file.cgi
+  ];
+
+  for (let i = 0; i < count; i++) {
+    let found = false;
+
+    for (const pathFormat of pathFormats) {
+      if (found) break;
+
+      try {
+        const path = pathFormat(i);
+        const templateUrl = `${protocol}://${host}${path}`;
+        console.log(`Trying: ${templateUrl}`);
+
+        const response = await httpClient.get(templateUrl, {
+          headers,
+          timeout: 5000,
+          responseType: 'text',
+        });
+
+        if (response.status === 200 && response.data) {
+          const content = String(response.data).trim();
+          console.log(`Report${i}.json from ${path}: ${content.substring(0, 100)}`);
+
+          // Skip HTML responses (likely 404 page)
+          if (content.startsWith('<') || content.startsWith('<!')) {
+            console.log(`Report${i}.json: Got HTML response, skipping`);
+            continue;
+          }
+
+          // Parse the JSON template to extract meter name
+          try {
+            const template = JSON.parse(content);
+            // Template format: { "MeterName": [{ "ts": "...", "values": {...} }] }
+            const meterNames = Object.keys(template).filter(
+              key => !key.startsWith('sys_') && key !== 'time'
+            );
+            if (meterNames.length > 0) {
+              templates.push({
+                index: i,
+                name: meterNames[0],
+                template: template,
+              });
+              console.log(`Report${i}.json: Found meter name = "${meterNames[0]}"`);
+              found = true;
+            }
+          } catch (parseErr) {
+            console.log(`Report${i}.json: Failed to parse - ${parseErr.message}`);
+          }
+        }
+      } catch (error) {
+        // Try next path format
+        console.log(`Report${i}.json via ${pathFormats.indexOf(pathFormat)}: ${error.message}`);
+      }
+    }
+
+    // If we didn't find this template with any path format, stop
+    if (!found && i > 0) {
+      console.log(`Report${i}.json: Not found with any path format, stopping`);
+      break;
+    }
+  }
+
+  console.log(`Found ${templates.length} templates`);
+  res.json({
+    success: true,
+    templates,
+  });
 });
 
 // Debug endpoint: Download various N720 configs to inspect their format

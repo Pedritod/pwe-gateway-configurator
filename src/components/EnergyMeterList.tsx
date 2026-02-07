@@ -16,8 +16,8 @@ import {
   type MeterType
 } from '../utils/meterTemplate';
 import { getMeterConfig, inferMeterTypeFromDataPointCount } from '../config/meterConfigs';
-import { generateN720EdgeCsv, parseN720EdgeCsv, generateN720LinkConfig, type N720MeterConfig } from '../utils/n720CsvGenerator';
-import { uploadEdgeCsv, downloadEdgeCsv, uploadNvConfig } from '../services/api';
+import { generateN720EdgeCsv, parseN720EdgeCsv, type N720MeterConfig } from '../utils/n720CsvGenerator';
+import { downloadEdgeCsv, n720SaveCurrent, downloadN720Templates } from '../services/api';
 import type { EdgeConfig, GatewayDefine } from '../types/gateway';
 
 const DEFAULT_REPORTING_INTERVAL = 60; // seconds
@@ -92,13 +92,16 @@ export function EnergyMeterList({ ip }: EnergyMeterListProps) {
             const parsedMeters = parseN720EdgeCsv(csvResult.csvContent);
             console.log('Parsed meters from CSV:', parsedMeters);
 
-            n720Meters = parsedMeters.map((m, index) => ({
-              name: m.name,
-              index,
-              slaveAddress: m.slaveAddress,
-              dataPointCount: m.dataPointCount,
-              meterType: inferMeterTypeFromDataPointCount('N720', m.dataPointCount) || 'Unknown',
-            }));
+            // Filter out System_Slave - it's a built-in gateway device, not a user-added meter
+            n720Meters = parsedMeters
+              .filter(m => m.name !== 'System_Slave')
+              .map((m, index) => ({
+                name: m.name,
+                index,
+                slaveAddress: m.slaveAddress,
+                dataPointCount: m.dataPointCount,
+                meterType: inferMeterTypeFromDataPointCount('N720', m.dataPointCount) || 'Unknown',
+              }));
           } else {
             console.log('N720 CSV download failed or empty, trying edge_node endpoint');
           }
@@ -106,8 +109,9 @@ export function EnergyMeterList({ ip }: EnergyMeterListProps) {
           console.log('Failed to download N720 CSV:', err);
         }
 
-        // Fetch report configuration - this is the most reliable source on N720
-        // because download_nv.cgi?name=edge_report works even when CSV download doesn't
+        // Fetch report configuration - this is the PRIMARY source for original meter names
+        // because the template contains the original names (e.g., "Device 1") while
+        // the CSV contains sanitized names (e.g., "Device_1")
         let edgeReport: { group: Array<{
           period?: number;
           topic?: string;
@@ -116,12 +120,149 @@ export function EnergyMeterList({ ip }: EnergyMeterListProps) {
           enable?: number;
           cond?: { period?: number; timed?: { type?: number; hh?: number; mm?: number } };
           tmpl_cont?: Record<string, unknown>;
+          tmpl_file?: string;
+          err_info?: string;  // We store original meter name here as "orig:Device Name"
         }> } = { group: [] };
         try {
           edgeReport = await n720Service.getEdgeReport();
           console.log('N720 edge report loaded:', edgeReport);
         } catch (err) {
           console.log('N720 edge_report endpoint not available:', err);
+        }
+
+        // Extract original meter names from the report templates
+        // Template can be in:
+        // 1. group.template (inline JSON string): {"Original Meter Name":[{"ts":"...","values":{...}}]}
+        // 2. group.tmpl_cont (template content object): {"Original Meter Name": {...}, "time": "..."}
+        // 3. group.tmpl_file (file reference): "/template/Report0.json" - need to download separately
+        const originalNamesFromTemplate: Map<number, string> = new Map();
+        if (edgeReport.group && edgeReport.group.length > 0) {
+          edgeReport.group.forEach((group, groupIndex) => {
+            // FIRST: Check err_info field for original name (stored by our save function)
+            // Format: "orig:Original Meter Name"
+            if (group.err_info && typeof group.err_info === 'string' && group.err_info.startsWith('orig:')) {
+              const errInfo = group.err_info;
+              const originalName = errInfo.substring(5); // Remove "orig:" prefix
+              originalNamesFromTemplate.set(groupIndex, originalName);
+              console.log(`Report group ${groupIndex}: original name from err_info = "${originalName}"`);
+              return; // Found original name
+            }
+
+            // Try tmpl_cont (direct template content object)
+            if (group.tmpl_cont && typeof group.tmpl_cont === 'object') {
+              // tmpl_cont format: { "MeterName": { "field": "field_1", ... }, "time": "sys_local_time" }
+              const meterNames = Object.keys(group.tmpl_cont).filter(
+                key => !key.startsWith('sys_') && key !== 'time'
+              );
+              if (meterNames.length > 0) {
+                originalNamesFromTemplate.set(groupIndex, meterNames[0]);
+                console.log(`Report group ${groupIndex}: original name from tmpl_cont = "${meterNames[0]}"`);
+                return; // Found name from tmpl_cont, no need to try template
+              }
+            }
+
+            // Fallback: try template (inline JSON string)
+            if (group.template) {
+              try {
+                const template = typeof group.template === 'string'
+                  ? JSON.parse(group.template)
+                  : group.template;
+                // Get the meter name (first key that isn't a system field)
+                const meterNames = Object.keys(template).filter(
+                  key => !key.startsWith('sys_') && key !== 'time'
+                );
+                if (meterNames.length > 0) {
+                  // Map group index to original name
+                  originalNamesFromTemplate.set(groupIndex, meterNames[0]);
+                  console.log(`Report group ${groupIndex}: original name from template = "${meterNames[0]}"`);
+                }
+              } catch (parseErr) {
+                console.log('Failed to parse template for original name:', parseErr);
+              }
+            }
+          });
+        }
+
+        // Try to download template files using tmpl_file paths from edge_report groups
+        // These are the authoritative source for original meter names
+        if (n720Meters.length > 0 && edgeReport.group && edgeReport.group.length > 0) {
+          console.log('Trying to download template files using tmpl_file paths...');
+          console.log('Edge report groups:', JSON.stringify(edgeReport.group.map(g => ({
+            name: g.name,
+            tmpl_file: g.tmpl_file,
+            hasTemplate: !!g.template,
+            hasTmplCont: !!g.tmpl_cont
+          }))));
+
+          for (let groupIndex = 0; groupIndex < edgeReport.group.length; groupIndex++) {
+            const group = edgeReport.group[groupIndex];
+            // Skip if we already have a name for this group
+            if (originalNamesFromTemplate.has(groupIndex)) {
+              console.log(`Group ${groupIndex}: Already have name "${originalNamesFromTemplate.get(groupIndex)}"`);
+              continue;
+            }
+
+            // Try to download using tmpl_file path
+            if (group.tmpl_file) {
+              try {
+                // tmpl_file is like "/template/Report0.json"
+                console.log(`Group ${groupIndex}: Trying to fetch template from: ${group.tmpl_file}`);
+                const response = await fetch(`/api/proxy?host=${ip}&path=${group.tmpl_file.substring(1)}`);
+                if (response.ok) {
+                  const text = await response.text();
+                  console.log(`Template response for group ${groupIndex}: ${text.substring(0, 100)}`);
+                  // Skip HTML responses
+                  if (!text.startsWith('<')) {
+                    const template = JSON.parse(text);
+                    const meterNames = Object.keys(template).filter(
+                      key => !key.startsWith('sys_') && key !== 'time'
+                    );
+                    if (meterNames.length > 0) {
+                      originalNamesFromTemplate.set(groupIndex, meterNames[0]);
+                      console.log(`Template file ${group.tmpl_file}: original name = "${meterNames[0]}"`);
+                    }
+                  }
+                }
+              } catch (fetchErr) {
+                console.log(`Failed to fetch template from ${group.tmpl_file}:`, fetchErr);
+              }
+            }
+          }
+        }
+
+        // Also try the bulk template download as a fallback
+        if (n720Meters.length > 0 && originalNamesFromTemplate.size < n720Meters.length) {
+          console.log('Trying bulk template download as fallback...');
+          try {
+            const templateResult = await downloadN720Templates(ip, n720Meters.length + 2);
+            if (templateResult.success && templateResult.templates.length > 0) {
+              console.log(`Downloaded ${templateResult.templates.length} template files`);
+              for (const tmpl of templateResult.templates) {
+                // Only use if we don't already have a name for this index
+                if (!originalNamesFromTemplate.has(tmpl.index)) {
+                  originalNamesFromTemplate.set(tmpl.index, tmpl.name);
+                  console.log(`Bulk template Report${tmpl.index}.json: original name = "${tmpl.name}"`);
+                }
+              }
+            } else {
+              console.log('Bulk template download returned no templates');
+            }
+          } catch (tmplErr) {
+            console.log('Failed to download bulk templates:', tmplErr);
+          }
+        }
+
+        // If we got meters from CSV, try to restore original names from template
+        if (n720Meters.length > 0 && originalNamesFromTemplate.size > 0) {
+          console.log('Restoring original meter names from templates');
+          n720Meters = n720Meters.map((meter, index) => {
+            const originalName = originalNamesFromTemplate.get(index);
+            if (originalName) {
+              console.log(`Meter ${index}: CSV name "${meter.name}" -> original "${originalName}"`);
+              return { ...meter, name: originalName };
+            }
+            return meter;
+          });
         }
 
         // Fallback 1: try the edge_node API endpoint if CSV download didn't work
@@ -264,14 +405,11 @@ export function EnergyMeterList({ ip }: EnergyMeterListProps) {
           // No meters configured yet - this is normal for a new setup
           console.log('N720: No meters configured yet. User can add meters via the Add Meter button.');
           setHasChanges(false);
-        } else if (edgeReport.group.length === 0) {
-          // Meters exist but no report configuration - mark as having changes
-          // This allows the user to save the report config for existing meters
-          console.log('N720: Meters found but no Data Report configured. Enabling save to create report config.');
-          setHasChanges(true);
         } else {
-          // Both meters and report groups exist - no unsaved changes
-          console.log(`N720: Loaded ${loadedN720Meters.length} meters and ${edgeReport.group.length} report groups. No unsaved changes.`);
+          // Meters exist - check if our n720Meters state matches what's on the gateway
+          // The native UI sends empty report groups {"group":[]}, so we shouldn't
+          // treat "no report groups" as "has changes"
+          console.log(`N720: Loaded ${loadedN720Meters.length} meters, ${edgeReport.group.length} report groups.`);
           setHasChanges(false);
         }
         return;
@@ -466,8 +604,6 @@ export function EnergyMeterList({ ip }: EnergyMeterListProps) {
           return;
         }
 
-        const n720Service = new N720GatewayService(ip);
-
         // Check if topic allows multiple devices
         const isMultiDeviceTopic = reportTopic === DEFAULT_REPORT_TOPIC ||
                                     reportTopic === `/${DEFAULT_REPORT_TOPIC}`;
@@ -475,155 +611,81 @@ export function EnergyMeterList({ ip }: EnergyMeterListProps) {
         // Limit to first meter only if not using multi-device topic
         const metersToSave = isMultiDeviceTopic ? n720Meters : [n720Meters[0]];
         console.log(`N720 save: isMultiDeviceTopic=${isMultiDeviceTopic}, saving ${metersToSave.length} of ${n720Meters.length} meters`);
+        console.log('DEBUG n720Meters state:', JSON.stringify(n720Meters, null, 2));
+        console.log('DEBUG metersToSave:', JSON.stringify(metersToSave, null, 2));
 
-        // Download existing CSV to preserve system entries (mac, ip, time, etc.)
-        let existingCsv: string | undefined;
-        try {
-          const csvResult = await downloadEdgeCsv(ip);
-          if (csvResult.success && csvResult.csvContent) {
-            existingCsv = csvResult.csvContent;
-            console.log('Downloaded existing CSV to preserve system entries:');
-            console.log('=== EXISTING CSV START ===');
-            console.log(existingCsv);
-            console.log('=== EXISTING CSV END ===');
-          } else {
-            console.log('CSV download returned empty or failed:', csvResult);
-          }
-        } catch (err) {
-          console.log('Could not download existing CSV, will create fresh config:', err);
-        }
-
-        // Generate CSV for meters to save, preserving system entries from existing config
+        // Generate a fresh CSV with ONLY the meters the user wants
+        // We do NOT preserve existing CSV entries because:
+        // 1. When deleting meters, we want them removed from the config
+        // 2. System_Slave entries are built-in to the gateway firmware and added automatically
+        // 3. Preserving existing entries caused add/delete to not work properly
+        //
+        // Note: meterIndex is 1-based (first meter uses _1 suffix, not _0)
         const meterConfigs: N720MeterConfig[] = metersToSave.map((m, index) => ({
           name: m.name,
           slaveAddress: m.slaveAddress,
           meterType: m.meterType,
-          meterIndex: index,
+          meterIndex: index + 1,  // 1-based: first meter = 1, second = 2, etc.
         }));
 
-        const csvContent = generateN720EdgeCsv(meterConfigs, existingCsv);
+        // Generate fresh CSV - do NOT pass existingCsv to ensure clean config
+        const csvContent = generateN720EdgeCsv(meterConfigs);
         console.log('Generated N720 CSV for all meters:', csvContent);
 
-        // Upload CSV to gateway (configures Data Acquisition - RAM only)
-        const uploadResult = await uploadEdgeCsv(ip, csvContent, 'edge.csv');
+        // ============================================
+        // FULL PROGRAMMATIC SAVE (exact HAR sequence with report groups):
+        // 1. POST /upload/edge (CSV)
+        // 2. POST /upload/template (Report templates for each meter)
+        // 3. POST /upload/nv1 (edge_report with groups)
+        // 4. POST /upload/nv2 (edge_report - same content)
+        // 5. GET /action_restart.cgi
+        // ============================================
 
-        if (!uploadResult.success) {
-          // Include errInfo and errMessage if available from the gateway response
-          const errorDetails = [
-            uploadResult.message,
-            uploadResult.error,
-            uploadResult.errInfo,
-            uploadResult.errMessage,
-          ].filter(Boolean).join(' | ');
-          setError(`Failed to upload CSV to N720 gateway: ${errorDetails || 'Unknown error'}`);
+        console.log('Executing full N720 Save Current + Restart sequence...');
+        console.log('Meters:', metersToSave.map(m => ({ name: m.name, slaveAddress: m.slaveAddress, meterType: m.meterType })));
+        console.log('Report Topic:', reportTopic);
+        console.log('Reporting Interval:', reportingInterval);
+
+        // Pass meter configs with meterIndex for report group generation
+        const metersForSave = meterConfigs.map(m => ({
+          name: m.name,
+          slaveAddress: m.slaveAddress,
+          meterType: m.meterType as string,  // Ensure it's a string for JSON serialization
+          meterIndex: m.meterIndex,
+        }));
+
+        console.log('DEBUG metersForSave:', JSON.stringify(metersForSave, null, 2));
+
+        const saveResult = await n720SaveCurrent(
+          ip,
+          csvContent,
+          true,
+          reportTopic,
+          reportingInterval,
+          metersForSave
+        );
+
+        if (!saveResult.success) {
+          const errorDetails = saveResult.message || saveResult.error || 'Unknown error';
+          setError(`Failed to save configuration: ${errorDetails}`);
+          console.error('Save Current failed:', saveResult);
           setSaving(false);
           return;
         }
 
-        console.log('CSV upload to /upload/edge successful (RAM)');
-
-        // CRITICAL: Also upload the edge CSV to flash storage (nv1 and nv2)
-        // Without this, the data acquisition config is lost after reboot!
-        const edgeCsvFlashResult = await uploadNvConfig(ip, 'edge', csvContent);
-        if (!edgeCsvFlashResult.success) {
-          console.warn('Failed to upload edge CSV to flash:', edgeCsvFlashResult);
-        } else {
-          console.log('Edge CSV uploaded to flash (nv1/nv2) successfully');
-        }
-
-        // Enable edge gateway
-        await n720Service.enableEdgeGateway();
-
-        // Upload link configuration to map UART ports to edge computing
-        // This is critical for the slave_link_info_error to be resolved
-        const linkConfig = generateN720LinkConfig();
-        console.log('Generated link config:', linkConfig);
-        const linkUploadResult = await uploadNvConfig(ip, 'link', linkConfig);
-
-        if (!linkUploadResult.success) {
-          console.warn('Failed to upload link config to flash:', linkUploadResult);
-        } else {
-          console.log('link config uploaded to flash successfully');
-        }
-
-        // Create report groups for each meter using the /upload/nv1 endpoint
-        // This is the working API discovered by capturing native UI traffic
-        console.log('Creating report groups for meters:', metersToSave);
-
-        const cleanTopic = reportTopic.startsWith('/') ? reportTopic.substring(1) : reportTopic;
-
-        // Build report groups with inline template content (tmpl_cont)
-        // Template format depends on MQTT topic:
-        // - v1/gateway/telemetry (multi-device): { "MeterName": { "field": "field_slaveAddr" }, "time": "sys_local_time" }
-        // - Other topics (single device): { "ts": "sys_timestamp_ms", "values": { "field": "field_slaveAddr" } }
-        const reportGroups = metersToSave.map(meter => {
-          // For report group name: sanitize and truncate (gateway requires 1-20 bytes, a-z/A-Z/0-9/_)
-          const sanitizedForGateway = meter.name.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
-          // Limit to 13 chars to allow for "_report" suffix (7 chars) = 20 total
-          const truncatedName = sanitizedForGateway.substring(0, 13);
-
-          // Get meter config to build the template content
-          const meterConfig = getMeterConfig('N720', meter.meterType);
-          const meterValues: Record<string, string> = {};
-
-          if (meterConfig) {
-            for (const field of meterConfig.reportingFields) {
-              meterValues[field] = `${field}_${meter.slaveAddress}`;
-            }
-          }
-
-          // Template format depends on topic
-          let tmplCont: Record<string, unknown>;
-          if (isMultiDeviceTopic) {
-            // Multi-device format: { "MeterName": [{ "ts": "sys_timestamp_ms", "values": { fields } }] }
-            tmplCont = {
-              [meter.name]: [{
-                ts: 'sys_timestamp_ms',
-                values: meterValues,
-              }],
-            };
-          } else {
-            // Single-device format: { "ts": "sys_timestamp_ms", "values": { fields } }
-            tmplCont = {
-              ts: 'sys_timestamp_ms',
-              values: meterValues,
-            };
-          }
-
-          return {
-            name: `${truncatedName}_report`,
-            topic: cleanTopic,
-            period: reportingInterval,
-            tmplCont,
-          };
-        });
-
-        // Save report groups using update_nv.cgi API (to RAM)
-        const reportUploadSuccess = await n720Service.saveAllReportGroups(reportGroups);
-
-        if (!reportUploadSuccess) {
-          console.warn('Failed to save report groups');
-        } else {
-          console.log('Report groups saved successfully');
-        }
-
-        // Note: No separate "save to flash" step needed - uploads to /upload/nv1 and /upload/nv2
-        // persist to flash storage directly (same as native UI behavior)
-
-        // Check if all uploads succeeded
-        const allUploadsSucceeded = edgeCsvFlashResult.success && linkUploadResult.success && reportUploadSuccess;
+        console.log('Save Current + Restart completed:', saveResult);
 
         setHasChanges(false);
         setSavedReportingInterval(reportingInterval);
         setSavedReportTopic(reportTopic);
 
-        setSuccess(`Configuration saved! ${metersToSave.length} meter(s) set up with data acquisition and MQTT reporting.${allUploadsSucceeded ? ' All settings persisted to flash.' : ' Warning: Some settings may not persist after reboot.'}`);
-
-        // Ask user if they want to reboot
-        if (confirm(`Configuration saved with ${metersToSave.length} meter(s)!\n\nDo you want to reboot the gateway now for all changes to take effect?\n\nIMPORTANT: Please use this app to restart the gateway. Do not use the native gateway UI to restart, as it may overwrite the configuration.`)) {
-          await n720Service.reboot();
-          setSuccess('Gateway is rebooting... Please wait 30 seconds and refresh. Note: Always use this app to restart the gateway after making changes.');
-        }
+        setSuccess(
+          `✅ Configuration saved with ${metersToSave.length} meter(s)!\n` +
+          `✅ Report groups created for each meter\n` +
+          `✅ Topic: ${reportTopic}, Interval: ${reportingInterval}s\n` +
+          `✅ Gateway is restarting...\n\n` +
+          `Please wait 30 seconds and refresh this page.`
+        );
       } catch (err) {
         setError(`Failed to save N720 configuration: ${err}`);
       } finally {

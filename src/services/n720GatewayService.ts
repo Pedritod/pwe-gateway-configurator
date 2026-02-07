@@ -11,7 +11,8 @@ for (let i = 0; i < 256; i++) {
 }
 
 // Compute CRC32 checksum of a string (returns 4-byte little-endian header)
-function computeCrc32Header(str: string): string {
+// Exported so it can be used by EnergyMeterList.tsx for edge CSV uploads
+export function computeCrc32Header(str: string): string {
   let crc = 0xFFFFFFFF;
   for (let i = 0; i < str.length; i++) {
     const byte = str.charCodeAt(i) & 0xFF;
@@ -966,6 +967,31 @@ export class N720GatewayService {
   }
 
   // Upload templates in native UI format
+  // Upload CSV to /upload/edge endpoint
+  // This uploads the CSV configuration file
+  async uploadEdgeCsv(csvContent: string): Promise<boolean> {
+    try {
+      console.log('Uploading CSV to /upload/edge...');
+      const response = await api.post('/upload-file', {
+        host: this.host,
+        path: 'upload/edge',
+        filename: 'conf',
+        content: csvContent,
+      });
+
+      if (response.data && response.data.err === 0) {
+        console.log('CSV uploaded successfully');
+        return true;
+      } else {
+        console.error('CSV upload failed:', response.data);
+        return false;
+      }
+    } catch (error) {
+      console.error('Failed to upload CSV:', error);
+      return false;
+    }
+  }
+
   // Native UI uploads all templates as one file with format: "Report0:{json}\nReport1:{json}\n"
   // - Endpoint: /upload/template
   // - FormData field name: "c"

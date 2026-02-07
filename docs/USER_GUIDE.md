@@ -1,259 +1,231 @@
-# Gateway Configurator User Guide
+# Gateway Configurator - User Guide
+
+This guide explains how to configure USR IOT gateways (N720, N510) to collect energy meter data and send it to ThingsBoard.
+
+---
+
+## Table of Contents
+
+1. [Overview](#overview)
+2. [ThingsBoard Device Setup](#thingsboard-device-setup)
+3. [Gateway Configuration](#gateway-configuration)
+4. [Adding Energy Meters](#adding-energy-meters)
+5. [ThingsBoard Rule Chain Configuration](#thingsboard-rule-chain-configuration)
+6. [Supported Devices](#supported-devices)
+7. [Troubleshooting](#troubleshooting)
+
+---
 
 ## Overview
 
-The **Gateway Configurator** is a web-based application developed by **PME - Power Under Control** for configuring USR IOT industrial gateways. This tool simplifies the process of setting up energy meters and connecting them to ThingsBoard IoT platform via MQTT.
+The Gateway Configurator is a web application that simplifies the configuration of USR IOT gateways for energy monitoring. It handles:
 
-### Supported Gateways
-
-| Gateway Model | Description |
-|---------------|-------------|
-| **N510** | Compact industrial gateway for small-scale deployments |
-| **N720** | Advanced industrial gateway for multi-device configurations |
+- Gateway discovery on the local network
+- MQTT broker configuration
+- Energy meter setup with Modbus registers
+- Automatic JSON template generation for ThingsBoard
 
 ---
 
-## Prerequisites
+## ThingsBoard Device Setup
 
-Before using the Gateway Configurator, ensure you have:
+Before configuring the gateway, you must create the correct type of device in ThingsBoard.
 
-- A USR IOT Gateway (N510 or N720) connected to your local network
-- Network access to the gateway's IP address
-- A ThingsBoard account with appropriate permissions
-- Energy meters connected to the gateway via RS485/Modbus
+### Step 1: Choose Device Type
 
----
+| Scenario | ThingsBoard Device Type | MQTT Topic |
+|----------|------------------------|------------|
+| **Multiple meters** through same gateway | Gateway | `v1/gateway/telemetry` |
+| **Single meter** only | Standard Device | `v1/devices/me/telemetry` |
 
-## Quick Start Guide
+- **If more than one energy meter will be connected through the same MQTT gateway:**
+  ✅ Create a **Gateway** device in ThingsBoard.
 
-### Step 1: Connect to the Gateway
+- **If only one energy meter will be connected:**
+  ✅ A standard (simple) device is sufficient.
 
-1. Open the Gateway Configurator application in your web browser
-2. The application will automatically scan for available gateways on your network
-3. Click on the discovered gateway to connect, or enter the gateway IP address manually
-4. Enter the gateway credentials (default: admin/admin)
+### Step 2: Retrieve the Access Token
 
-![Gateway Scanner](images/gateway-scanner.png)
+Once the device is created in ThingsBoard:
 
----
+1. Open the created device.
+2. Navigate to the **Credentials** tab.
+3. Copy the **Access Token**.
 
-### Step 2: Initialize Configuration (New Devices Only)
-
-> **Important:** This step is only required for brand new gateways or after a factory reset.
-
-1. Navigate to the **Status** tab
-2. Click the **"Init Config"** button to initialize the gateway with default settings
-3. Wait for the initialization process to complete
-4. The gateway may reboot automatically
+This token will be required later in the gateway configuration.
 
 ---
 
-### Step 3: Configure ThingsBoard Integration
+## Gateway Configuration
 
-Before configuring the gateway, you need to create a device or gateway in ThingsBoard:
+### Step 1: Connect to Gateway
 
-#### For Single Device Setup (Non-ThingsBoard Gateway Topic)
-1. Log in to your ThingsBoard instance
-2. Navigate to **Devices** → **Add New Device**
-3. Enter a device name and click **Add**
-4. Copy the **Access Token** from the device details
+1. Open the Gateway Configurator application.
+2. Click **Scan Network** to discover gateways on your local network.
+3. Select your gateway from the list, or enter the IP address manually.
+4. Click **Connect**.
 
-#### For Multiple Devices Setup (ThingsBoard Gateway Topic)
-1. Log in to your ThingsBoard instance
-2. Navigate to **Devices** → **Add New Device**
-3. Select **"Is Gateway"** checkbox
-4. Enter a gateway name and click **Add**
-5. Copy the **Access Token** from the device details
+### Step 2: Configure MQTT Settings
 
----
+In the **MQTT Configuration** section:
 
-### Step 4: Gateway MQTT Setup
+| Field | Description |
+|-------|-------------|
+| **Server Address** | ThingsBoard MQTT broker address (e.g., `thingsboard.example.com`) |
+| **Port** | MQTT port (default: `1883`, or `8883` for SSL) |
+| **Access Token** | Paste the token retrieved from ThingsBoard |
+| **Gateway Name** | Must match the device name in ThingsBoard |
 
-1. Navigate to the **Gateway Setup** tab in the configurator
-2. Configure the following settings:
+> ⚠️ **Note:** The Gateway Name must match:
+> - The **Gateway device name** in ThingsBoard (if using a gateway device), or
+> - The **device name** (if using a single device)
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| **MQTT Broker** | ThingsBoard MQTT server address | `mqtt.thingsboard.cloud` or your server IP |
-| **Port** | MQTT broker port | `1883` (or `8883` for SSL) |
-| **Client ID** | Identifier for the MQTT connection | `my-gateway-01` |
-| **Access Token** | Token copied from ThingsBoard | `A1B2C3D4E5F6G7H8` |
+### Step 3: Save MQTT Configuration
 
-3. Click **Save** to apply the MQTT configuration
-
-> **Note:** The Client ID is used for MQTT connection identification and does not affect ThingsBoard device naming.
-
-#### SD Card Formatting (Optional)
-
-If the gateway has an SD card installed for local data storage, you can format it from the Gateway Setup section:
-
-1. In the **Gateway Setup** tab, locate the **SD Card** section
-2. Click **"Format SD Card"** to erase all data and prepare the card for use
-3. Confirm the action when prompted
-
-> **Warning:** Formatting the SD card will permanently delete all stored data. Use this option only when necessary.
+Click **Save MQTT Settings** to apply the configuration.
 
 ---
 
-### Step 5: Add Energy Meters
+## Adding Energy Meters
 
-1. Navigate to the **Energy Meters** tab
-2. Click **"Add Meter"** to open the meter configuration dialog
-3. Fill in the meter details:
+### Step 1: Navigate to Energy Meters
 
-| Field | Description | Example |
-|-------|-------------|---------|
-| **Meter Name** | Display name for the meter | `Building A - Floor 1` |
-| **Meter Type** | Select the energy meter model | `EM4371`, `XMC34F`, etc. |
-| **Slave Address** | Modbus slave address (1-247) | `1` |
+In the main interface, locate the **Energy Meters** section.
 
-4. Click **Add** to add the meter to the configuration
-5. Repeat for additional meters
+### Step 2: Add a New Meter
 
-#### MQTT Topic Configuration
+1. Click **Add Meter**.
+2. Fill in the required fields:
 
-| Topic | Devices Allowed | Use Case |
-|-------|-----------------|----------|
-| `v1/gateway/telemetry` | Multiple | ThingsBoard Gateway mode - recommended for multiple meters |
-| `v1/devices/me/telemetry` | Single | Direct device telemetry - for single meter setups |
-| Custom | Single | Custom integrations |
+| Field | Description |
+|-------|-------------|
+| **Meter Name** | Display name for the meter (e.g., "Building A - Floor 1") |
+| **Meter Type** | Select from supported meter types (EM4371, XMC34F, etc.) |
+| **Slave Address** | Modbus address of the meter (1-247) |
 
-> **Important:** When using topics other than `v1/gateway/telemetry`, only one energy meter can be configured.
+3. Click **Add** to add the meter.
 
----
+### Step 3: Configure Multiple Meters (Optional)
 
-### Step 6: Configure Reporting Settings
+Repeat Step 2 for each additional energy meter connected to the gateway.
 
-1. Set the **Reporting Interval** (in seconds) - how often data is sent to ThingsBoard
-2. Select or enter the **Report Topic** based on your ThingsBoard setup
-3. Recommended interval: 60 seconds for most applications
+### Step 4: Save Configuration
+
+1. Click **Save to Gateway** to apply all changes.
+2. The gateway will restart automatically.
+3. Wait approximately 30 seconds for the gateway to come back online.
+
+> ℹ️ **Info:** The application automatically generates the correct JSON structure and Modbus configuration for each meter type.
 
 ---
 
-### Step 7: Save and Apply Configuration
+## ThingsBoard Rule Chain Configuration
 
-1. Review all configured meters in the list
-2. Click **"Save to Gateway"** to upload the configuration
-3. When prompted, click **Yes** to reboot the gateway
-4. Wait approximately 30 seconds for the gateway to restart
+After saving the gateway configuration, the energy meters will appear automatically in ThingsBoard.
 
-> **Warning:** Always use this application to restart the gateway after making changes. Using the native gateway UI may overwrite your configuration.
+### Step 1: Verify Devices
+
+1. Go to ThingsBoard.
+2. Navigate to **Devices**.
+3. The newly configured energy meters should appear as new devices.
+
+### Step 2: Configure Rule Chain
+
+For each newly created energy meter device:
+
+1. Open the device.
+2. Go to **Details** tab.
+3. Change the **Rule Chain** to the correct type.
+
+**Recommended Rule Chain Selection:**
+
+- Use the **Energy Meter** rule chain if available.
+- Otherwise, use the **1-to-1 rule chain**.
+
+### Important: Do Not Rename Devices (Gateway Mode)
+
+If **Gateway mode** was selected (multiple meters):
+
+> ⚠️ **Do not rename the automatically created meter devices in ThingsBoard.**
+
+If device names are changed manually, the gateway will no longer recognize them and will create new duplicate devices.
 
 ---
 
-## Verification
+## Supported Devices
 
-After the gateway reboots:
+### Gateway Models
 
-1. Return to the **Status** tab to verify the gateway is online
-2. Check the **MQTT Connection Status** shows "Connected"
-3. In ThingsBoard, verify that telemetry data is being received from your devices
+| Model | Status |
+|-------|--------|
+| USR-N720 | ✅ Fully Supported |
+| USR-N510 | ✅ Fully Supported |
+
+### Energy Meter Types
+
+| Meter Type | Data Points | Description |
+|------------|-------------|-------------|
+| **EM4371** | 17 | Eastron EM4371 Multi-function Meter |
+| **XMC34F** | 30 | XMC34F Energy Analyzer |
+| **Sfere720** | 25 | Sfere 720 Power Meter |
+| **EnergyNG9** | 20 | Energy NG9 Meter |
+| **TAC4300** | 22 | TAC 4300 Energy Meter |
 
 ---
 
 ## Troubleshooting
 
-### Gateway Not Found
+### Gateway Not Found During Scan
 
-- Ensure the gateway is powered on and connected to the network
-- Verify your computer is on the same network segment
-- Try entering the gateway IP address manually
+- Ensure the gateway is powered on and connected to the network.
+- Check that your computer is on the same network/subnet as the gateway.
+- Try entering the gateway IP address manually.
 
 ### MQTT Connection Failed
 
-- Verify the MQTT broker address and port
-- Check that the Access Token is correct
-- Ensure your network allows outbound connections on the MQTT port
+- Verify the ThingsBoard server address is correct.
+- Check that the access token matches the device in ThingsBoard.
+- Ensure port 1883 (or 8883 for SSL) is not blocked by firewall.
 
-### No Data in ThingsBoard
+### Meter Data Not Appearing in ThingsBoard
 
-- Verify the energy meters are properly connected via RS485
-- Check the Modbus slave addresses match the physical meter configuration
-- Review the reporting interval settings
+- Verify the Modbus slave address is correct.
+- Check that the meter is properly wired to the RS485 port.
+- Ensure the baud rate matches the meter configuration (default: 9600).
 
-### Configuration Lost After Reboot
+### Device Names Show Underscores
 
-- Always use the Gateway Configurator to restart the gateway
-- Avoid using the native gateway web interface after configuration
+If device names appear with underscores (e.g., "Device_1" instead of "Device 1"):
 
----
-
-## Supported Energy Meters
-
-### N510 Gateway
-
-| Meter Type | Description | Data Points |
-|------------|-------------|-------------|
-| XMC34F | Standard 3-phase meter | 12 |
-| XMC34F_Lite | Lite version with essential readings | 8 |
-
-### N720 Gateway
-
-| Meter Type | Description | Data Points |
-|------------|-------------|-------------|
-| EM4371 | High-precision 3-phase analyzer | 27 |
-| XMC34F | Standard 3-phase meter | 12 |
+- This is a display issue in the CSV configuration.
+- The correct name is stored in the report template and will be used in ThingsBoard.
+- Re-save the configuration if needed.
 
 ---
 
-## Technical Specifications
+## Quick Reference
 
-### Communication Protocols
+### MQTT Topics
 
-- **Modbus RTU** over RS485 for meter communication
-- **MQTT** for cloud connectivity (ThingsBoard)
+| Topic | Use Case |
+|-------|----------|
+| `v1/gateway/telemetry` | Multiple meters through gateway device |
+| `v1/devices/me/telemetry` | Single meter / single device |
 
-### Data Format
+### Default Settings
 
-The gateway sends telemetry data in JSON format:
-
-**Single Device Format:**
-```json
-{
-  "v_l1": 230.5,
-  "v_l2": 231.2,
-  "v_l3": 229.8,
-  "i_l1": 12.3,
-  "power_total": 8500
-}
-```
-
-**Multiple Devices Format (Gateway Mode):**
-```json
-{
-  "Device Name 1": [{
-    "ts": 1699459200000,
-    "values": {
-      "v_l1": 230.5,
-      "power_total": 8500
-    }
-  }],
-  "Device Name 2": [{
-    "ts": 1699459200000,
-    "values": {
-      "v_l1": 228.3,
-      "power_total": 4200
-    }
-  }]
-}
-```
+| Setting | Default Value |
+|---------|---------------|
+| Reporting Interval | 60 seconds |
+| MQTT QoS | 1 (At-least-once) |
+| Modbus Protocol | RTU |
+| Baud Rate | 9600 |
+| Data Bits | 8 |
+| Parity | None |
+| Stop Bits | 1 |
 
 ---
 
 ## Support
 
-For technical support or questions, please contact:
-
-**PME - Power Under Control**
-
----
-
-## Version History
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2024 | Initial release with N510 and N720 support |
-
----
-
-*Gateway Configurator v1.0 - PME - Power Under Control*
+For additional support or to report issues, please contact your system administrator or refer to the project repository.

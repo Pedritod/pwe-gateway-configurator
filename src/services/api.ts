@@ -6,6 +6,29 @@ const api = axios.create({
   timeout: 10000,
 });
 
+// Upload JSON config to nv1 and nv2 flash storage
+// This is used for "link" and "edge_report" configs in native UI Save Current flow
+export interface UploadNvJsonResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+  results?: Array<{ endpoint: string; success: boolean; status?: number; data?: unknown; error?: string }>;
+}
+
+export const uploadNvJson = async (host: string, filename: string, jsonContent: string): Promise<UploadNvJsonResponse> => {
+  try {
+    const response = await api.post<UploadNvJsonResponse>('/upload-nv-config', {
+      host,
+      configName: filename,
+      configContent: jsonContent,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Upload NV JSON error:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
 export interface DiscoverResponse {
   gateways: DiscoveredGateway[];
 }
@@ -135,6 +158,93 @@ export const uploadNvConfig = async (host: string, configName: string, configCon
   }
 };
 
+// Upload to /upload/template endpoint (part of native UI Save Current flow)
+export const uploadTemplate = async (host: string, content: string = ''): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const response = await api.post('/upload-template', { host, content });
+    return response.data;
+  } catch (error) {
+    console.error('Upload template error:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+// Upload to /upload/conver_csv endpoint (finalizes native UI Save Current flow)
+export const uploadConverCsv = async (host: string): Promise<{ success: boolean; error?: string }> => {
+  try {
+    const response = await api.post('/upload-conver-csv', { host });
+    return response.data;
+  } catch (error) {
+    console.error('Upload conver_csv error:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+// Upload CSV to N720 gateway only (no save/restart)
+// User will click "Save Current + Restart" in native UI to complete
+export interface UploadEdgeCsvResponse {
+  success: boolean;
+  error?: string;
+}
+
+export const uploadEdgeCsvOnly = async (host: string, csvContent: string): Promise<UploadEdgeCsvResponse> => {
+  try {
+    const response = await api.post<UploadEdgeCsvResponse>('/upload-edge-csv', {
+      host,
+      csvContent,
+    }, {
+      timeout: 30000,
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Upload edge CSV error:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
+// Complete N720 Save Current sequence - replicates EXACT native UI behavior
+// This performs the full save sequence with exact binary data captured from native UI
+export interface N720SaveCurrentResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+  results?: Array<{ step: number; endpoint: string; status: number; data?: unknown }>;
+  restarted?: boolean;
+}
+
+export interface N720MeterForSave {
+  name: string;
+  slaveAddress: number;
+  meterType: string;
+  meterIndex: number;  // 1-based index for data point suffix (e.g., v_l1_1, v_l1_2)
+}
+
+export const n720SaveCurrent = async (
+  host: string,
+  csvContent?: string,
+  restart?: boolean,
+  reportTopic?: string,
+  reportingInterval?: number,
+  meters?: N720MeterForSave[]
+): Promise<N720SaveCurrentResponse> => {
+  try {
+    const response = await api.post<N720SaveCurrentResponse>('/n720-save-current', {
+      host,
+      csvContent,
+      restart,
+      reportTopic,
+      reportingInterval,
+      meters,
+    }, {
+      timeout: 60000, // 60 second timeout for full sequence
+    });
+    return response.data;
+  } catch (error) {
+    console.error('N720 Save Current error:', error);
+    return { success: false, error: String(error) };
+  }
+};
+
 // Import edge_report JSON to N720 gateway using native import API
 // This uses the same endpoint as the browser's Import button in Data Report page
 export interface ImportEdgeReportResponse {
@@ -177,6 +287,33 @@ export const probeGatewayIp = async (ip: string): Promise<ProbeGatewayResponse> 
   } catch (error) {
     console.error('Probe gateway error:', error);
     return { found: false, error: String(error) };
+  }
+};
+
+// Download N720 template files to get original meter names
+// Templates are stored at /template/Report0.json, /template/Report1.json, etc.
+export interface N720TemplateInfo {
+  index: number;
+  name: string;  // Original meter name from template
+  template: Record<string, unknown>;
+}
+
+export interface DownloadN720TemplatesResponse {
+  success: boolean;
+  templates: N720TemplateInfo[];
+  error?: string;
+}
+
+export const downloadN720Templates = async (host: string, count?: number): Promise<DownloadN720TemplatesResponse> => {
+  try {
+    const response = await api.get<DownloadN720TemplatesResponse>('/download-n720-templates', {
+      params: { host, count: count || 10 },
+      timeout: 30000, // 30 second timeout for multiple downloads
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Download N720 templates error:', error);
+    return { success: false, templates: [], error: String(error) };
   }
 };
 

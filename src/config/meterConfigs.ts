@@ -28,6 +28,8 @@ export interface DataPointConfig {
   dataType: string;  // 'uint16', 'uint32(ABCD)', 'float32(ABCD)', etc.
   pollInterval: number;
   responseTimeout: number;
+  decimals?: number;      // Decimal places at position 18 (default: 2)
+  floatDecimals?: number; // Decimal places at position 5 for float types (default: 0)
 }
 
 export interface MeterConfig {
@@ -158,37 +160,43 @@ const EM4371_N510_REPORTING_FIELDS = [
 // Format: C,DeviceName,FieldName,,DataType,Opt1,Opt2,...,RegisterAddr',Opt,...
 
 const XMC34F_N720_DATA_POINTS: DataPointConfig[] = [
-  { name: 'v_l1', functionCode: 3, registerAddress: 404097, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'v_l2', functionCode: 3, registerAddress: 404099, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'v_l3', functionCode: 3, registerAddress: 404101, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'i_l1', functionCode: 3, registerAddress: 404103, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'i_l2', functionCode: 3, registerAddress: 404105, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'i_l3', functionCode: 3, registerAddress: 404107, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'freq', functionCode: 3, registerAddress: 404135, dataType: 'uint16', pollInterval: 100, responseTimeout: 100 },
-  { name: 'p_l1', functionCode: 3, registerAddress: 404141, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'p_l2', functionCode: 3, registerAddress: 404143, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'p_l3', functionCode: 3, registerAddress: 404145, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'q_l1', functionCode: 3, registerAddress: 404150, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'q_l2', functionCode: 3, registerAddress: 404152, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'q_l3', functionCode: 3, registerAddress: 404154, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'p_tot', functionCode: 3, registerAddress: 404117, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'q_tot', functionCode: 3, registerAddress: 404119, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 's_tot', functionCode: 3, registerAddress: 404121, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'pf_tot', functionCode: 3, registerAddress: 404133, dataType: 'uint16', pollInterval: 100, responseTimeout: 100 },
-  { name: 'e_tot', functionCode: 3, registerAddress: 404129, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'e_q_tot', functionCode: 3, registerAddress: 404127, dataType: 'uint32(ABCD)', pollInterval: 100, responseTimeout: 100 },
-  { name: 'p_sgn_tot', functionCode: 3, registerAddress: 404123, dataType: 'uint16', pollInterval: 100, responseTimeout: 100 },
-  { name: 'q_sgn_tot', functionCode: 3, registerAddress: 404124, dataType: 'uint16', pollInterval: 100, responseTimeout: 100 },
-  { name: 'p_sgn_l1', functionCode: 3, registerAddress: 404147, dataType: 'uint16', pollInterval: 100, responseTimeout: 100 },
-  { name: 'p_sgn_l2', functionCode: 3, registerAddress: 404148, dataType: 'uint16', pollInterval: 100, responseTimeout: 100 },
-  { name: 'p_sgn_l3', functionCode: 3, registerAddress: 404149, dataType: 'uint16', pollInterval: 100, responseTimeout: 100 },
-  { name: 'q_sgn_l1', functionCode: 3, registerAddress: 404156, dataType: 'uint16', pollInterval: 100, responseTimeout: 100 },
-  { name: 'q_sgn_l2', functionCode: 3, registerAddress: 404157, dataType: 'uint16', pollInterval: 100, responseTimeout: 100 },
-  { name: 'q_sgn_l3', functionCode: 3, registerAddress: 404158, dataType: 'uint16', pollInterval: 100, responseTimeout: 100 },
-  { name: 'pf_sgn_tot', functionCode: 3, registerAddress: 404134, dataType: 'uint16', pollInterval: 100, responseTimeout: 100 },
+  // kta and ktv first (as per working CSV) - uint16 = dataType 4
+  // Format: pos5=0 (floatDecimals), pos18=2 (decimals)
+  { name: 'kta', functionCode: 3, registerAddress: 404609, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'ktv', functionCode: 3, registerAddress: 404610, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  // Main data points - float32(ABCD) = dataType 6, floatDecimals=0, decimals=2
+  { name: 'v_l1', functionCode: 3, registerAddress: 404097, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'v_l2', functionCode: 3, registerAddress: 404099, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'v_l3', functionCode: 3, registerAddress: 404101, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'i_l1', functionCode: 3, registerAddress: 404103, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'i_l2', functionCode: 3, registerAddress: 404105, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'i_l3', functionCode: 3, registerAddress: 404107, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'freq', functionCode: 3, registerAddress: 404135, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'p_l1', functionCode: 3, registerAddress: 404141, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'p_l2', functionCode: 3, registerAddress: 404143, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'p_l3', functionCode: 3, registerAddress: 404145, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'q_l1', functionCode: 3, registerAddress: 404150, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'q_l2', functionCode: 3, registerAddress: 404152, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'q_l3', functionCode: 3, registerAddress: 404154, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'p_tot', functionCode: 3, registerAddress: 404117, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'q_tot', functionCode: 3, registerAddress: 404119, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 's_tot', functionCode: 3, registerAddress: 404121, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'pf_tot', functionCode: 3, registerAddress: 404133, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'e_tot', functionCode: 3, registerAddress: 404129, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'e_q_tot', functionCode: 3, registerAddress: 404127, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'p_sgn_tot', functionCode: 3, registerAddress: 404123, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'q_sgn_tot', functionCode: 3, registerAddress: 404124, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'p_sgn_l1', functionCode: 3, registerAddress: 404147, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'p_sgn_l2', functionCode: 3, registerAddress: 404148, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'p_sgn_l3', functionCode: 3, registerAddress: 404149, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'q_sgn_l1', functionCode: 3, registerAddress: 404156, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'q_sgn_l2', functionCode: 3, registerAddress: 404157, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'q_sgn_l3', functionCode: 3, registerAddress: 404158, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
+  { name: 'pf_sgn_tot', functionCode: 3, registerAddress: 404134, dataType: 'uint16', pollInterval: 100, responseTimeout: 100, decimals: 2 },
 ];
 
 const XMC34F_N720_REPORTING_FIELDS = [
+  'kta', 'ktv',
   'v_l1', 'v_l2', 'v_l3', 'i_l1', 'i_l2', 'i_l3',
   'p_l1', 'p_l2', 'p_l3', 'freq', 'q_l1', 'q_l2', 'q_l3',
   'p_tot', 'q_tot', 's_tot', 'pf_tot', 'e_tot', 'e_q_tot',
@@ -202,27 +210,30 @@ const XMC34F_N720_REPORTING_FIELDS = [
 // ============================================================================
 
 const EM4371_N720_DATA_POINTS: DataPointConfig[] = [
-  { name: 'v_l1', functionCode: 3, registerAddress: 300017, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'v_l2', functionCode: 3, registerAddress: 300019, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'v_l3', functionCode: 3, registerAddress: 300021, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'i_l1', functionCode: 3, registerAddress: 300023, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'i_l2', functionCode: 3, registerAddress: 300025, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'i_l3', functionCode: 3, registerAddress: 300027, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'p_l1', functionCode: 3, registerAddress: 300033, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'p_l2', functionCode: 3, registerAddress: 300035, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'p_l3', functionCode: 3, registerAddress: 300037, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'q_l1', functionCode: 3, registerAddress: 300041, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'q_l2', functionCode: 3, registerAddress: 300043, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'q_l3', functionCode: 3, registerAddress: 300045, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 's_l1', functionCode: 3, registerAddress: 300049, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 's_l2', functionCode: 3, registerAddress: 300051, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 's_l3', functionCode: 3, registerAddress: 300053, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'pf_l1', functionCode: 3, registerAddress: 300057, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'pf_l2', functionCode: 3, registerAddress: 300059, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'pf_l3', functionCode: 3, registerAddress: 300061, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'freq', functionCode: 3, registerAddress: 300079, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'e_tot', functionCode: 3, registerAddress: 300365, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200 },
-  { name: 'ct_ratio', functionCode: 3, registerAddress: 365305, dataType: 'uint16', pollInterval: 100, responseTimeout: 200 },
+  // float32 types have floatDecimals=2 at position 5, decimals=2 at position 18
+  { name: 'v_l1', functionCode: 3, registerAddress: 300017, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'v_l2', functionCode: 3, registerAddress: 300019, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'v_l3', functionCode: 3, registerAddress: 300021, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'i_l1', functionCode: 3, registerAddress: 300023, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'i_l2', functionCode: 3, registerAddress: 300025, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'i_l3', functionCode: 3, registerAddress: 300027, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'p_l1', functionCode: 3, registerAddress: 300033, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'p_l2', functionCode: 3, registerAddress: 300035, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'p_l3', functionCode: 3, registerAddress: 300037, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'q_l1', functionCode: 3, registerAddress: 300041, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'q_l2', functionCode: 3, registerAddress: 300043, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'q_l3', functionCode: 3, registerAddress: 300045, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 's_l1', functionCode: 3, registerAddress: 300049, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 's_l2', functionCode: 3, registerAddress: 300051, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 's_l3', functionCode: 3, registerAddress: 300053, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'pf_l1', functionCode: 3, registerAddress: 300057, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'pf_l2', functionCode: 3, registerAddress: 300059, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'pf_l3', functionCode: 3, registerAddress: 300061, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'freq', functionCode: 3, registerAddress: 300079, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  { name: 'e_tot', functionCode: 3, registerAddress: 300365, dataType: 'float32(ABCD)', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 2 },
+  // uint16 types have floatDecimals=0 at position 5, decimals=2 at position 18
+  { name: 'ct_ratio', functionCode: 3, registerAddress: 365305, dataType: 'uint16', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 0 },
+  { name: 'pt_ratio', functionCode: 3, registerAddress: 365304, dataType: 'uint16', pollInterval: 100, responseTimeout: 200, decimals: 2, floatDecimals: 0 },
 ];
 
 const EM4371_N720_REPORTING_FIELDS = [
@@ -525,16 +536,25 @@ export function detectGatewayType(modelName: string): GatewayType {
 /**
  * Get data type code for N720 format
  * Maps our data type strings to N720's numeric codes
+ *
+ * N720 Data Type Codes:
+ * 4 = 16 Bit Unsigned (uint16)
+ * 5 = 16 Bit Signed (int16)
+ * 6 = 32 Bit Float ABCD (float32)
+ * 7 = 32 Bit Float CDAB
+ * 8 = 32 Bit Float BADC
+ * 9 = 32 Bit Float DCBA
+ * 10 = 32 Bit Unsigned ABCD (uint32)
  */
 export function getN720DataTypeCode(dataType: string): number {
   const typeMap: Record<string, number> = {
     'uint16': 4,
     'int16': 5,
-    'uint32(ABCD)': 6,
-    'int32(ABCD)': 7,
-    'float32(ABCD)': 10,
-    'uint32(BADC)': 8,
-    'uint32(CDAB)': 9,
+    'float32(ABCD)': 6,
+    'float32(CDAB)': 7,
+    'float32(BADC)': 8,
+    'float32(DCBA)': 9,
+    'uint32(ABCD)': 10,
   };
   return typeMap[dataType] || 4;
 }
