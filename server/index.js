@@ -2554,9 +2554,10 @@ app.post('/api/n720-save-current', async (req, res) => {
 
       for (let i = 0; i < meters.length; i++) {
         const meter = meters[i];
-        console.log(`DEBUG: Meter ${i} name: "${meter.name}"`);
+        console.log(`DEBUG: Meter ${i} name: "${meter.name}", meterType: "${meter.meterType}"`);
         const meterIndex = meter.meterIndex || (i + 1);
         const reportingFields = getN720ReportingFields(meter.meterType);
+        console.log(`DEBUG: Meter ${i} reportingFields (${reportingFields.length} fields):`, reportingFields);
 
         // Build field mappings
         // Key = base field name (e.g., "v_l1"), Value = field with meter index suffix (e.g., "v_l1_2")
@@ -2565,6 +2566,7 @@ app.post('/api/n720-save-current', async (req, res) => {
           const fieldWithIndex = `${field}_${meterIndex}`;
           fieldsObj[field] = fieldWithIndex;  // Key without suffix, value with suffix
         }
+        console.log(`DEBUG: Meter ${i} fieldsObj:`, JSON.stringify(fieldsObj));
 
         let templateObj;
         if (isGatewayTopic) {
@@ -2575,16 +2577,20 @@ app.post('/api/n720-save-current', async (req, res) => {
             values: fieldsObj
           }];
         } else {
-          // Simple flat format (same as N510): {"field":"field",...,"time":"sys_timestamp_ms"}
-          templateObj = { ...fieldsObj, time: 'sys_timestamp_ms' };
+          // Non-gateway topic format: {"ts":"sys_timestamp_ms","values":{...}}
+          templateObj = {
+            ts: 'sys_timestamp_ms',
+            values: fieldsObj
+          };
         }
         templateLines.push(`Report${i}:${JSON.stringify(templateObj)}`);
 
         // Create report group referencing template file
         // Note: Topic should NOT have leading slash
-        // Use simple "Report{N}" name format as seen in working HAR files
+        // Sanitize name: only a-z, A-Z, 0-9, _ allowed, max 20 chars
+        const sanitizedName = meter.name.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 20);
         groups.push({
-          name: `Report${i + 1}`,
+          name: sanitizedName,
           link: 'MQTT1',
           topic: topic.startsWith('/') ? topic.substring(1) : topic,
           qos: 1,
@@ -2671,7 +2677,22 @@ app.post('/api/n720-save-current', async (req, res) => {
     console.log(`Step ${stepNum}: POST /upload/nv2 (link)...`);
     await uploadMultipart('/upload/nv2', 'link', linkData, stepNum++);
 
-    // Step 5-7: Upload template + edge_report (with CRC32 prefix)
+    // Step 5: GET download_flex.cgi
+    console.log(`Step ${stepNum}: GET /download_flex.cgi?name=edge&ext=${deviceName}...`);
+    try {
+      await httpClient.get(`${protocol}://${host}/download_flex.cgi?name=edge&ext=${deviceName}`, { headers, timeout: 10000 });
+      results.push({ step: stepNum++, endpoint: '/download_flex.cgi', status: 200 });
+    } catch (e) {
+      console.log(`Step ${stepNum} warning:`, e.message);
+      stepNum++;
+    }
+
+    // Step 6: Upload conver_csv
+    console.log(`Step ${stepNum}: POST /upload/conver_csv...`);
+    const converCsvContent = 'S,1,6,10,JSON\r\n';
+    await uploadMultipart('/upload/conver_csv', 'conver_csv', converCsvContent, stepNum++);
+
+    // Step 7-9: Upload template + edge_report (with CRC32 prefix)
     if (meters && meters.length > 0 && edgeReportData) {
       console.log(`Step ${stepNum}: POST /upload/template...`);
       await uploadMultipart('/upload/template', 'report', templateContent, stepNum++);
@@ -2682,21 +2703,6 @@ app.post('/api/n720-save-current', async (req, res) => {
       console.log(`Step ${stepNum}: POST /upload/nv2 (edge_report with CRC32 prefix)...`);
       await uploadMultipart('/upload/nv2', 'edge_report', edgeReportData, stepNum++);
     }
-
-    // Step 8: GET download_flex.cgi again
-    console.log(`Step ${stepNum}: GET /download_flex.cgi?name=edge&ext=${deviceName}...`);
-    try {
-      await httpClient.get(`${protocol}://${host}/download_flex.cgi?name=edge&ext=${deviceName}`, { headers, timeout: 10000 });
-      results.push({ step: stepNum++, endpoint: '/download_flex.cgi', status: 200 });
-    } catch (e) {
-      console.log(`Step ${stepNum} warning:`, e.message);
-      stepNum++;
-    }
-
-    // Step 9: Upload conver_csv
-    console.log(`Step ${stepNum}: POST /upload/conver_csv...`);
-    const converCsvContent = 'S,1,6,10,JSON\r\n';
-    await uploadMultipart('/upload/conver_csv', 'conver_csv', converCsvContent, stepNum++);
 
     // Step 10: RESTART
     console.log(`Step ${stepNum}: RESTART...`);
@@ -2740,14 +2746,50 @@ app.post('/api/n720-save-current', async (req, res) => {
       console.log('Warning: Gateway did not respond within timeout, but restart was initiated');
     }
 
-    // NOTE: N720 requires a SECOND restart to fully activate MQTT
-    // For now, we skip the automatic second restart to prevent report group issues.
-    // User should manually restart the gateway again via the UI if MQTT is not connecting.
+    // Extra restart to fully activate MQTT (30 seconds after first restart)
+    if (gatewayOnline) {
+      console.log('\n=== Waiting 30 seconds before extra restart ===');
+      await new Promise(resolve => setTimeout(resolve, 30000));
+
+      console.log('\n=== EXTRA RESTART (to activate MQTT) ===');
+      console.log(`Step ${stepNum}: EXTRA RESTART...`);
+      try {
+        await httpClient.get(`${protocol}://${host}/action_restart.cgi`, { headers, timeout: 5000 });
+      } catch (e) { /* Expected - connection drops */ }
+      results.push({ step: stepNum++, endpoint: '/action_restart.cgi (extra)', status: 200 });
+
+      // Wait for gateway to come back online
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      const startTime2 = Date.now();
+      let finalOnline = false;
+
+      while (Date.now() - startTime2 < maxWaitTime) {
+        try {
+          const pollResponse = await httpClient.get(`${protocol}://${host}/action_tf.cgi?act=getinfo`, {
+            headers,
+            timeout: 5000,
+          });
+          if (pollResponse.status === 200) {
+            console.log('Gateway is back online after extra restart!');
+            finalOnline = true;
+            break;
+          }
+        } catch (pollErr) {
+          console.log(`Gateway not ready yet (${Math.round((Date.now() - startTime2) / 1000)}s elapsed)...`);
+        }
+        await new Promise(resolve => setTimeout(resolve, pollInterval));
+      }
+
+      if (!finalOnline) {
+        console.log('Warning: Gateway did not respond after extra restart');
+      }
+    }
 
     console.log('\n=== SAVE COMPLETE ===');
     res.json({
       success: true,
-      message: 'Configuration saved. Note: For MQTT to activate on N720, you may need to restart the gateway manually one more time.',
+      message: 'Configuration saved successfully.',
       results,
       restarted: true,
       gatewayOnline,

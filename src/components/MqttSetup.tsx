@@ -319,7 +319,7 @@ export function MqttSetup({ ip, mac, gatewayType: initialGatewayType }: MqttSetu
           return;
         }
 
-        // Step 2: Configure UART1 for RS485 (may already be done in initial setup)
+        // Step 2: Configure UART1 for RS485
         console.log('Configuring UART1 for RS485...');
         await n720Gateway.configureUart1();
 
@@ -327,7 +327,7 @@ export function MqttSetup({ ip, mac, gatewayType: initialGatewayType }: MqttSetu
         console.log('Configuring NTP settings (UTC+1, ntp1.inrim.it)...');
         await n720Gateway.configureNTP();
 
-        // Step 4: Reboot gateway to apply settings
+        // Step 4: Reboot gateway to apply all settings
         console.log('Rebooting N720 gateway to apply settings...');
         await n720Gateway.reboot();
 
