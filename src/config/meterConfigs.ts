@@ -537,24 +537,62 @@ export function detectGatewayType(modelName: string): GatewayType {
  * Get data type code for N720 format
  * Maps our data type strings to N720's numeric codes
  *
- * N720 Data Type Codes:
+ * N720 Data Type Codes (same as N510):
  * 4 = 16 Bit Unsigned (uint16)
  * 5 = 16 Bit Signed (int16)
- * 6 = 32 Bit Float ABCD (float32)
- * 7 = 32 Bit Float CDAB
- * 8 = 32 Bit Float BADC
- * 9 = 32 Bit Float DCBA
- * 10 = 32 Bit Unsigned ABCD (uint32)
+ * 6 = 32 Bit Unsigned ABCD (uint32)
+ * 7 = 32 Bit Unsigned CDAB
+ * 8 = 32 Bit Unsigned BADC
+ * 9 = 32 Bit Unsigned DCBA
+ * 10 = 32 Bit Float ABCD (float32)
+ * 11 = 32 Bit Float CDAB
+ * 12 = 32 Bit Float BADC
+ * 13 = 32 Bit Float DCBA
  */
 export function getN720DataTypeCode(dataType: string): number {
   const typeMap: Record<string, number> = {
     'uint16': 4,
     'int16': 5,
-    'float32(ABCD)': 6,
-    'float32(CDAB)': 7,
-    'float32(BADC)': 8,
-    'float32(DCBA)': 9,
-    'uint32(ABCD)': 10,
+    'uint32(ABCD)': 6,
+    'uint32(CDAB)': 7,
+    'uint32(BADC)': 8,
+    'uint32(DCBA)': 9,
+    'float32(ABCD)': 10,
+    'float32(CDAB)': 11,
+    'float32(BADC)': 12,
+    'float32(DCBA)': 13,
+  };
+  return typeMap[dataType] || 4;
+}
+
+/**
+ * Get data type code for N510 format
+ * Maps our data type strings to N510's numeric codes
+ *
+ * N510 Data Type Codes (different from N720!):
+ * 4 = 16 Bit Unsigned (uint16)
+ * 5 = 16 Bit Signed (int16)
+ * 6 = 32 Bit Unsigned ABCD (uint32) - NOTE: Different from N720!
+ * 7 = 32 Bit Unsigned CDAB
+ * 8 = 32 Bit Unsigned BADC
+ * 9 = 32 Bit Unsigned DCBA
+ * 10 = 32 Bit Float ABCD (float32) - NOTE: Different from N720!
+ * 11 = 32 Bit Float CDAB
+ * 12 = 32 Bit Float BADC
+ * 13 = 32 Bit Float DCBA
+ */
+export function getN510DataTypeCode(dataType: string): number {
+  const typeMap: Record<string, number> = {
+    'uint16': 4,
+    'int16': 5,
+    'uint32(ABCD)': 6,
+    'uint32(CDAB)': 7,
+    'uint32(BADC)': 8,
+    'uint32(DCBA)': 9,
+    'float32(ABCD)': 10,
+    'float32(CDAB)': 11,
+    'float32(BADC)': 12,
+    'float32(DCBA)': 13,
   };
   return typeMap[dataType] || 4;
 }

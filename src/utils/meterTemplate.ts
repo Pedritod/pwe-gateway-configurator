@@ -4,7 +4,7 @@ import {
   type MeterType,
   type MeterConfig,
   getMeterConfig,
-  getN720DataTypeCode,
+  getN510DataTypeCode,
   inferMeterTypeFromDataPointCount,
 } from '../config/meterConfigs';
 
@@ -138,7 +138,7 @@ function generateDataPoints(
   return meterConfig.dataPoints.map((point, i) => ({
     key: baseKey + i + 1,
     name: `${point.name}_${index}`,
-    type: getN720DataTypeCode(point.dataType),
+    type: getN510DataTypeCode(point.dataType),  // Use N510-specific type codes
     range: null,
     defv: 1,
     addr: formatN510Address(point.functionCode, point.registerAddress),
