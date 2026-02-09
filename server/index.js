@@ -2573,18 +2573,20 @@ app.post('/api/n720-save-current', async (req, res) => {
         }
         console.log(`DEBUG: Meter ${i} fieldsObj:`, JSON.stringify(fieldsObj));
 
+        // Create report group name: {device_name}_Report
+        const sanitizedName = meter.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const reportGroupName = `${sanitizedName}_Report`;
+
         let templateObj;
         if (isGatewayTopic) {
-          // ThingsBoard gateway format: {"Device":[{"ts":"sys_timestamp_ms","values":{...}}]}
-          // Includes device name wrapper for multi-device support
+          // ThingsBoard gateway format: {"device_name":[{"ts":"sys_timestamp_ms","values":{...}}]}
           templateObj = {};
           templateObj[meter.name] = [{
             ts: 'sys_timestamp_ms',
             values: fieldsObj
           }];
         } else {
-          // Non-gateway topic format: {"ts":"sys_timestamp_ms","values":{...}}
-          // Includes ts and values, but NO device name wrapper
+          // Non-gateway format: {"ts":"sys_timestamp_ms","values":{...}} (no device name wrapper)
           templateObj = {
             ts: 'sys_timestamp_ms',
             values: fieldsObj
@@ -2594,11 +2596,8 @@ app.post('/api/n720-save-current', async (req, res) => {
 
         // Create report group referencing template file
         // Note: Topic should NOT have leading slash
-        // Sanitize name: only a-z, A-Z, 0-9, _ allowed, max 20 chars
-        const sanitizedName = meter.name.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 20);
         groups.push({
-          enable: 1,  // IMPORTANT: Report group must be enabled to show up in UI
-          name: sanitizedName,
+          name: reportGroupName,
           link: 'MQTT1',
           topic: topic.startsWith('/') ? topic.substring(1) : topic,
           qos: 1,
@@ -2618,7 +2617,6 @@ app.post('/api/n720-save-current', async (req, res) => {
       }
 
       templateContent = templateLines.join('\n') + '\n';
-      console.log('Template content:', templateContent);
 
       // CRC32 implementation (standard polynomial 0xEDB88320)
       function crc32(buffer) {
@@ -2634,7 +2632,6 @@ app.post('/api/n720-save-current', async (req, res) => {
 
       // Build edge_report with CRC32 prefix (discovered from HAR analysis!)
       // The prefix is the CRC32 checksum of the JSON content in LITTLE-ENDIAN byte order
-      // NOTE: Templates do NOT need CRC32 prefix - only edge_report does
       const edgeReportJson = JSON.stringify({ group: groups });
       const jsonBuffer = Buffer.from(edgeReportJson);
       const crc = crc32(jsonBuffer);
@@ -2642,6 +2639,7 @@ app.post('/api/n720-save-current', async (req, res) => {
       edgeReportPrefix.writeUInt32LE(crc, 0);
       console.log(`CRC32 of edge_report JSON: 0x${crc.toString(16)} -> prefix: ${edgeReportPrefix.toString('hex')}`);
       edgeReportData = Buffer.concat([edgeReportPrefix, jsonBuffer]);
+      console.log('Template content:', templateContent);
       console.log('edge_report JSON:', edgeReportJson);
     }
 
@@ -2680,7 +2678,19 @@ app.post('/api/n720-save-current', async (req, res) => {
     console.log(`Step ${stepNum}: POST /upload/nv2 (link)...`);
     await uploadMultipart('/upload/nv2', 'link', linkData, stepNum++);
 
-    // Step 5: GET download_flex.cgi
+    // Step 5-7: Upload template + edge_report (with CRC32 prefix)
+    if (meters && meters.length > 0 && edgeReportData) {
+      console.log(`Step ${stepNum}: POST /upload/template...`);
+      await uploadMultipart('/upload/template', 'report', templateContent, stepNum++);
+
+      console.log(`Step ${stepNum}: POST /upload/nv1 (edge_report with CRC32 prefix)...`);
+      await uploadMultipart('/upload/nv1', 'edge_report', edgeReportData, stepNum++);
+
+      console.log(`Step ${stepNum}: POST /upload/nv2 (edge_report with CRC32 prefix)...`);
+      await uploadMultipart('/upload/nv2', 'edge_report', edgeReportData, stepNum++);
+    }
+
+    // Step 8: GET download_flex.cgi again
     console.log(`Step ${stepNum}: GET /download_flex.cgi?name=edge&ext=${deviceName}...`);
     try {
       await httpClient.get(`${protocol}://${host}/download_flex.cgi?name=edge&ext=${deviceName}`, { headers, timeout: 10000 });
@@ -2690,26 +2700,10 @@ app.post('/api/n720-save-current', async (req, res) => {
       stepNum++;
     }
 
-    // Step 6: Upload conver_csv
+    // Step 9: Upload conver_csv
     console.log(`Step ${stepNum}: POST /upload/conver_csv...`);
     const converCsvContent = 'S,1,6,10,JSON\r\n';
-    await uploadMultipart('/upload/conver_csv', 'conver_csv', converCsvContent, stepNum++);
-
-    // Step 7-10: Upload template + edge_report
-    // Templates: /upload/template with filename "report", NO CRC32 prefix (native UI format)
-    // Edge report: /upload/nv1 and /upload/nv2 with CRC32 prefix
-    if (meters && meters.length > 0 && edgeReportData) {
-      // Upload templates to /upload/template with filename "report" (no CRC prefix!)
-      // Format: "Report0:{json}\nReport1:{json}\n"
-      console.log(`Step ${stepNum}: POST /upload/template (filename: report, no CRC prefix)...`);
-      await uploadMultipart('/upload/template', 'report', templateContent, stepNum++);
-
-      console.log(`Step ${stepNum}: POST /upload/nv1 (edge_report with CRC32 prefix)...`);
-      await uploadMultipart('/upload/nv1', 'edge_report', edgeReportData, stepNum++);
-
-      console.log(`Step ${stepNum}: POST /upload/nv2 (edge_report with CRC32 prefix)...`);
-      await uploadMultipart('/upload/nv2', 'edge_report', edgeReportData, stepNum++);
-    }
+    await uploadMultipart('/upload/conver_csv', 'conver_csv', converCsvContent, stepNum++)
 
     // Step 10: RESTART
     console.log(`Step ${stepNum}: RESTART...`);
