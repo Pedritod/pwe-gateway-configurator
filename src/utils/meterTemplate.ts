@@ -422,9 +422,12 @@ export function removeMeterFromConfig(config: EdgeConfig, meterName: string): Ed
  * This should be called just before saving to ensure the template matches
  * the expected format for the current topic.
  *
+ * IMPORTANT: This also fixes data point names to use the slave address as suffix.
+ * If data points have wrong suffixes (e.g., _1 when slave is 3), they are corrected.
+ *
  * @param config The edge config to adjust
  * @param mqttTopic The current MQTT topic
- * @returns A new config with the adjusted template format
+ * @returns A new config with the adjusted template format and corrected data point names
  */
 export function adjustTemplateForTopic(config: EdgeConfig, mqttTopic: string): EdgeConfig {
   const newConfig = JSON.parse(JSON.stringify(config)) as EdgeConfig;
@@ -432,6 +435,50 @@ export function adjustTemplateForTopic(config: EdgeConfig, mqttTopic: string): E
   // Ensure rtable.format exists
   if (!newConfig.rtable?.format?.[0]) {
     return newConfig;
+  }
+
+  // FIRST: Fix data point names to use slave address as suffix
+  // This corrects any data points that were created with wrong indices
+  for (const ctableEntry of newConfig.ctable || []) {
+    // Get slave address from port config: port = ['uart', 1, slaveAddress]
+    const slaveAddress = ctableEntry.port?.[2];
+    if (typeof slaveAddress !== 'number') continue;
+
+    for (const dataPoint of ctableEntry.datas || []) {
+      // Data point name format: "field_index" (e.g., "v_l1_0")
+      const dpMatch = dataPoint.name.match(/^(.+)_\d+$/);
+      if (dpMatch) {
+        const fieldName = dpMatch[1];
+        const correctName = `${fieldName}_${slaveAddress}`;
+        if (dataPoint.name !== correctName) {
+          console.log(`Fixing data point name: "${dataPoint.name}" -> "${correctName}"`);
+          dataPoint.name = correctName;
+        }
+      }
+    }
+  }
+
+  // Also fix rtable.datas names to match
+  for (const rtableData of newConfig.rtable.datas || []) {
+    // Find the corresponding ctable entry by key
+    for (const ctableEntry of newConfig.ctable || []) {
+      const slaveAddress = ctableEntry.port?.[2];
+      if (typeof slaveAddress !== 'number') continue;
+
+      const matchingDataPoint = ctableEntry.datas?.find(d => d.key === rtableData.key);
+      if (matchingDataPoint) {
+        const dpMatch = rtableData.name.match(/^(.+)_\d+$/);
+        if (dpMatch) {
+          const fieldName = dpMatch[1];
+          const correctName = `${fieldName}_${slaveAddress}`;
+          if (rtableData.name !== correctName) {
+            console.log(`Fixing rtable.datas name: "${rtableData.name}" -> "${correctName}"`);
+            rtableData.name = correctName;
+          }
+        }
+        break;
+      }
+    }
   }
 
   const isMultiDeviceTopic = mqttTopic === MULTI_DEVICE_MQTT_TOPIC ||
@@ -443,14 +490,18 @@ export function adjustTemplateForTopic(config: EdgeConfig, mqttTopic: string): E
     const meterTemplates: Record<string, Array<Record<string, string>>> = {};
 
     for (const ctableEntry of newConfig.ctable || []) {
-      // Build field mappings from data points
+      // Get slave address for this meter
+      const slaveAddress = ctableEntry.port?.[2];
+      if (typeof slaveAddress !== 'number') continue;
+
+      // Build field mappings using slave address as suffix
       const fields: Record<string, string> = {};
       for (const dataPoint of ctableEntry.datas || []) {
-        // Data point name format: "field_index" (e.g., "v_l1_0")
+        // Data point name format: "field_slaveAddress" (e.g., "v_l1_3")
         const dpMatch = dataPoint.name.match(/^(.+)_\d+$/);
         if (dpMatch) {
           const fieldName = dpMatch[1];
-          fields[fieldName] = dataPoint.name;
+          fields[fieldName] = `${fieldName}_${slaveAddress}`;
         }
       }
 
@@ -467,14 +518,15 @@ export function adjustTemplateForTopic(config: EdgeConfig, mqttTopic: string): E
     const firstCtableEntry = newConfig.ctable?.[0];
 
     if (firstCtableEntry) {
+      const slaveAddress = firstCtableEntry.port?.[2] || 0;
       const flatTemplate: Record<string, string> = {};
 
       for (const dataPoint of firstCtableEntry.datas || []) {
-        // Data point name format: "field_index" (e.g., "v_l1_0")
+        // Data point name format: "field_slaveAddress" (e.g., "v_l1_3")
         const dpMatch = dataPoint.name.match(/^(.+)_\d+$/);
         if (dpMatch) {
           const fieldName = dpMatch[1];
-          flatTemplate[fieldName] = dataPoint.name;
+          flatTemplate[fieldName] = `${fieldName}_${slaveAddress}`;
         }
       }
 
