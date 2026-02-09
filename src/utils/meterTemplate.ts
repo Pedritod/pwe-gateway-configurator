@@ -135,7 +135,8 @@ function generateDataPoints(
   _slaveAddress: number,
   baseKey: number
 ): EdgeDataPoint[] {
-  return meterConfig.dataPoints.map((point, i) => ({
+  console.log(`generateDataPoints: Creating ${meterConfig.dataPoints.length} data points with index ${index}`);
+  const dataPoints = meterConfig.dataPoints.map((point, i) => ({
     key: baseKey + i + 1,
     name: `${point.name}_${index}`,
     type: getN510DataTypeCode(point.dataType),  // Use N510-specific type codes
@@ -146,6 +147,8 @@ function generateDataPoints(
     ct: point.pollInterval,
     to: point.responseTimeout,
   }));
+  console.log(`generateDataPoints: Sample data point names: ${dataPoints.slice(0, 3).map(d => d.name).join(', ')}...`);
+  return dataPoints;
 }
 
 /**
@@ -277,6 +280,8 @@ export function addMeterToConfig(
 
   const newConfig = JSON.parse(JSON.stringify(config)) as EdgeConfig;
   const index = getNextIndex(newConfig);
+
+  console.log(`addMeterToConfig: Adding meter "${meterName}" with index ${index} (ctable length: ${newConfig.ctable?.length || 0})`);
 
   // Calculate base key for new data points
   let maxDataKey = 0;

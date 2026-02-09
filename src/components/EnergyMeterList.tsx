@@ -621,12 +621,17 @@ export function EnergyMeterList({ ip }: EnergyMeterListProps) {
         // 3. Preserving existing entries caused add/delete to not work properly
         //
         // Note: meterIndex is 1-based (first meter uses _1 suffix, not _0)
-        const meterConfigs: N720MeterConfig[] = metersToSave.map((m, index) => ({
-          name: m.name,
-          slaveAddress: m.slaveAddress,
-          meterType: m.meterType,
-          meterIndex: index + 1,  // 1-based: first meter = 1, second = 2, etc.
-        }));
+        // IMPORTANT: Each meter must have a unique meterIndex for data point naming
+        const meterConfigs: N720MeterConfig[] = metersToSave.map((m, index) => {
+          const meterIndex = index + 1;  // 1-based: first meter = 1, second = 2, etc.
+          console.log(`Building meterConfig[${index}]: name="${m.name}", meterIndex=${meterIndex}`);
+          return {
+            name: m.name,
+            slaveAddress: m.slaveAddress,
+            meterType: m.meterType,
+            meterIndex,
+          };
+        });
 
         // Generate fresh CSV - do NOT pass existingCsv to ensure clean config
         const csvContent = generateN720EdgeCsv(meterConfigs);

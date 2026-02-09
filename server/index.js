@@ -2557,8 +2557,10 @@ app.post('/api/n720-save-current', async (req, res) => {
 
       for (let i = 0; i < meters.length; i++) {
         const meter = meters[i];
-        console.log(`DEBUG: Meter ${i} name: "${meter.name}", meterType: "${meter.meterType}"`);
-        const meterIndex = meter.meterIndex || (i + 1);
+        // Use the meter's meterIndex if provided, otherwise calculate from array position (1-based)
+        // This ensures each meter gets a unique index even if meterIndex wasn't explicitly set
+        const meterIndex = meter.meterIndex ?? (i + 1);
+        console.log(`DEBUG: Meter ${i} name: "${meter.name}", meterType: "${meter.meterType}", meterIndex: ${meterIndex} (from meter: ${meter.meterIndex})`);
         const reportingFields = getN720ReportingFields(meter.meterType);
         console.log(`DEBUG: Meter ${i} reportingFields (${reportingFields.length} fields):`, reportingFields);
 

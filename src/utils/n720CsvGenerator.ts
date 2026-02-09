@@ -124,16 +124,27 @@ export function generateN720EdgeCsv(meters: N720MeterConfig[], existingCsv?: str
   }
 
   // Generate lines for each new meter, separating by type
-  for (const meter of meters) {
+  // IMPORTANT: Each meter must have a unique meterIndex for data point naming
+  for (let meterArrayIndex = 0; meterArrayIndex < meters.length; meterArrayIndex++) {
+    const meter = meters[meterArrayIndex];
     const {
       name: rawName,
       slaveAddress,
       meterType,
-      meterIndex,
       port = 'Uart1',
       protocol = 1,
       pollingInterval = 100,
     } = meter;
+
+    // Use the meter's meterIndex if provided, otherwise calculate from array position (1-based)
+    // This ensures each meter gets a unique index even if meterIndex wasn't explicitly set
+    const meterIndex = meter.meterIndex ?? (meterArrayIndex + 1);
+
+    console.log(`CSV Gen: Processing meter ${meterArrayIndex}: name="${rawName}", meterIndex=${meterIndex}, meterType="${meterType}"`);
+
+    if (meterIndex === undefined || meterIndex === null) {
+      console.error(`CSV Gen ERROR: meterIndex is undefined for meter "${rawName}"`);
+    }
 
     // Sanitize meter name
     const sanitized = rawName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '');
@@ -179,6 +190,13 @@ export function generateN720EdgeCsv(meters: N720MeterConfig[], existingCsv?: str
   lines.push(...scLines);
   lines.push(...stateLines);
   lines.push(...dataLines);
+
+  console.log(`CSV Gen Summary: ${scLines.length} SC lines, ${stateLines.length} state lines, ${dataLines.length} data lines`);
+  console.log(`CSV Gen: SC lines (meter names):`, scLines.map(l => l.split(',')[1]));
+  // Log a sample of data lines to verify meterIndex
+  if (dataLines.length > 0) {
+    console.log(`CSV Gen: Sample data point names:`, dataLines.slice(0, 5).map(l => l.split(',')[2]));
+  }
 
   // N720 gateway requires CRLF line endings (Windows-style)
   // IMPORTANT: Must end with trailing CRLF (verified from HAR capture)
