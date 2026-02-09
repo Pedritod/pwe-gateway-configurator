@@ -2610,10 +2610,7 @@ app.post('/api/n720-save-current', async (req, res) => {
       }
 
       templateContent = templateLines.join('\n') + '\n';
-
-      // Build edge_report with CRC32 prefix (discovered from HAR analysis!)
-      // The prefix is the CRC32 checksum of the JSON content in LITTLE-ENDIAN byte order
-      const edgeReportJson = JSON.stringify({ group: groups });
+      console.log('Template content:', templateContent);
 
       // CRC32 implementation (standard polynomial 0xEDB88320)
       function crc32(buffer) {
@@ -2627,18 +2624,16 @@ app.post('/api/n720-save-current', async (req, res) => {
         return (crc ^ 0xFFFFFFFF) >>> 0;
       }
 
-      // Calculate CRC32 of the JSON string
+      // Build edge_report with CRC32 prefix (discovered from HAR analysis!)
+      // The prefix is the CRC32 checksum of the JSON content in LITTLE-ENDIAN byte order
+      // NOTE: Templates do NOT need CRC32 prefix - only edge_report does
+      const edgeReportJson = JSON.stringify({ group: groups });
       const jsonBuffer = Buffer.from(edgeReportJson);
       const crc = crc32(jsonBuffer);
-
-      // Convert CRC32 to little-endian 4-byte buffer
       const edgeReportPrefix = Buffer.alloc(4);
       edgeReportPrefix.writeUInt32LE(crc, 0);
-
       console.log(`CRC32 of edge_report JSON: 0x${crc.toString(16)} -> prefix: ${edgeReportPrefix.toString('hex')}`);
       edgeReportData = Buffer.concat([edgeReportPrefix, jsonBuffer]);
-
-      console.log('Template content:', templateContent);
       console.log('edge_report JSON:', edgeReportJson);
     }
 
@@ -2692,9 +2687,13 @@ app.post('/api/n720-save-current', async (req, res) => {
     const converCsvContent = 'S,1,6,10,JSON\r\n';
     await uploadMultipart('/upload/conver_csv', 'conver_csv', converCsvContent, stepNum++);
 
-    // Step 7-9: Upload template + edge_report (with CRC32 prefix)
+    // Step 7-10: Upload template + edge_report
+    // Templates: /upload/template with filename "report", NO CRC32 prefix (native UI format)
+    // Edge report: /upload/nv1 and /upload/nv2 with CRC32 prefix
     if (meters && meters.length > 0 && edgeReportData) {
-      console.log(`Step ${stepNum}: POST /upload/template...`);
+      // Upload templates to /upload/template with filename "report" (no CRC prefix!)
+      // Format: "Report0:{json}\nReport1:{json}\n"
+      console.log(`Step ${stepNum}: POST /upload/template (filename: report, no CRC prefix)...`);
       await uploadMultipart('/upload/template', 'report', templateContent, stepNum++);
 
       console.log(`Step ${stepNum}: POST /upload/nv1 (edge_report with CRC32 prefix)...`);
