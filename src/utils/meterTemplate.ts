@@ -73,21 +73,51 @@ export function calculateConfigSize(config: EdgeConfig): {
 
 /**
  * Extract existing meter indices from the edge config
- * Returns 1-based indices: [1, 2, 3, ...] for n meters
+ * Scans data point names to find actual indices in use.
+ * Returns sorted unique indices found (e.g., [1, 3, 5] if meters 2 and 4 were deleted)
  */
 export function getExistingIndices(config: EdgeConfig): number[] {
-  const count = config.ctable?.length || 0;
-  return Array.from({ length: count }, (_, i) => i + 1);
+  const indices = new Set<number>();
+
+  for (const ctableEntry of config.ctable || []) {
+    for (const dataPoint of ctableEntry.datas || []) {
+      // Data point names are like "v_l1_2" - extract the trailing number
+      const match = dataPoint.name.match(/_(\d+)$/);
+      if (match) {
+        indices.add(parseInt(match[1], 10));
+      }
+    }
+  }
+
+  return Array.from(indices).sort((a, b) => a - b);
 }
 
 /**
  * Get the next available index for a new meter
- * Returns 1-based index: first meter = 1, second = 2, etc.
- * This matches the N720 convention and ensures consistency across gateway types.
+ * Finds the maximum existing index from data point names and returns max + 1.
+ * This prevents index collisions when meters are added/removed out of order.
+ *
+ * Example: If meters have indices 1, 3 (meter 2 was deleted), next index is 4.
  */
 export function getNextIndex(config: EdgeConfig): number {
-  // Use 1-based indexing (first meter = 1, second = 2, etc.)
-  return (config.ctable?.length || 0) + 1;
+  let maxIndex = 0;
+
+  // Scan all data points to find the highest existing index
+  for (const ctableEntry of config.ctable || []) {
+    for (const dataPoint of ctableEntry.datas || []) {
+      // Data point names are like "v_l1_2" - extract the trailing number
+      const match = dataPoint.name.match(/_(\d+)$/);
+      if (match) {
+        const index = parseInt(match[1], 10);
+        if (index > maxIndex) {
+          maxIndex = index;
+        }
+      }
+    }
+  }
+
+  // Return the next index (max + 1), minimum of 1 for empty configs
+  return maxIndex + 1;
 }
 
 // ============================================================================
