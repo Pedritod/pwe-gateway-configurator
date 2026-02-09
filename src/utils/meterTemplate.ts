@@ -73,19 +73,21 @@ export function calculateConfigSize(config: EdgeConfig): {
 
 /**
  * Extract existing meter indices from the edge config
- * Now simply returns indices 0 to n-1 based on ctable length
+ * Returns 1-based indices: [1, 2, 3, ...] for n meters
  */
 export function getExistingIndices(config: EdgeConfig): number[] {
   const count = config.ctable?.length || 0;
-  return Array.from({ length: count }, (_, i) => i);
+  return Array.from({ length: count }, (_, i) => i + 1);
 }
 
 /**
  * Get the next available index for a new meter
- * Simply returns the current ctable length (0-indexed)
+ * Returns 1-based index: first meter = 1, second = 2, etc.
+ * This matches the N720 convention and ensures consistency across gateway types.
  */
 export function getNextIndex(config: EdgeConfig): number {
-  return config.ctable?.length || 0;
+  // Use 1-based indexing (first meter = 1, second = 2, etc.)
+  return (config.ctable?.length || 0) + 1;
 }
 
 // ============================================================================
@@ -177,7 +179,7 @@ function generateCtableEntry(
 /**
  * Generate template entry for a new meter
  * Returns the field mappings for this meter
- * The suffix (_0, _1, etc.) is applied to data point references
+ * The suffix (_1, _2, etc.) is applied to data point references (1-based indexing)
  */
 function generateTemplateEntry(
   meterConfig: MeterConfig,
