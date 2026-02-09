@@ -72,20 +72,17 @@ export function calculateConfigSize(config: EdgeConfig): {
 // ============================================================================
 
 /**
- * Extract existing meter indices from the edge config
- * Scans data point names to find actual indices in use.
- * Returns sorted unique indices found (e.g., [1, 3, 5] if meters 2 and 4 were deleted)
+ * Extract existing meter indices (slave addresses) from the edge config
+ * Returns sorted unique slave addresses found
  */
 export function getExistingIndices(config: EdgeConfig): number[] {
   const indices = new Set<number>();
 
   for (const ctableEntry of config.ctable || []) {
-    for (const dataPoint of ctableEntry.datas || []) {
-      // Data point names are like "v_l1_2" - extract the trailing number
-      const match = dataPoint.name.match(/_(\d+)$/);
-      if (match) {
-        indices.add(parseInt(match[1], 10));
-      }
+    // Get slave address from port config: port = ['uart', 1, slaveAddress]
+    const slaveAddress = ctableEntry.port?.[2];
+    if (typeof slaveAddress === 'number') {
+      indices.add(slaveAddress);
     }
   }
 
@@ -93,31 +90,24 @@ export function getExistingIndices(config: EdgeConfig): number[] {
 }
 
 /**
- * Get the next available index for a new meter
- * Finds the maximum existing index from data point names and returns max + 1.
- * This prevents index collisions when meters are added/removed out of order.
+ * Get the index for a meter based on its slave address.
+ * The slave address IS the index - this ensures unique indices per meter.
  *
- * Example: If meters have indices 1, 3 (meter 2 was deleted), next index is 4.
+ * @deprecated Use slaveAddress directly as the index instead of calling this function
  */
 export function getNextIndex(config: EdgeConfig): number {
-  let maxIndex = 0;
+  // This function is deprecated - slave address should be used directly as index
+  // Keeping for backwards compatibility, returns max slave address + 1
+  let maxSlaveAddress = 0;
 
-  // Scan all data points to find the highest existing index
   for (const ctableEntry of config.ctable || []) {
-    for (const dataPoint of ctableEntry.datas || []) {
-      // Data point names are like "v_l1_2" - extract the trailing number
-      const match = dataPoint.name.match(/_(\d+)$/);
-      if (match) {
-        const index = parseInt(match[1], 10);
-        if (index > maxIndex) {
-          maxIndex = index;
-        }
-      }
+    const slaveAddress = ctableEntry.port?.[2];
+    if (typeof slaveAddress === 'number' && slaveAddress > maxSlaveAddress) {
+      maxSlaveAddress = slaveAddress;
     }
   }
 
-  // Return the next index (max + 1), minimum of 1 for empty configs
-  return maxIndex + 1;
+  return maxSlaveAddress + 1;
 }
 
 // ============================================================================
@@ -311,9 +301,12 @@ export function addMeterToConfig(
   }
 
   const newConfig = JSON.parse(JSON.stringify(config)) as EdgeConfig;
-  const index = getNextIndex(newConfig);
 
-  console.log(`addMeterToConfig: Adding meter "${meterName}" with index ${index} (ctable length: ${newConfig.ctable?.length || 0})`);
+  // Use slave address as the index for data point naming
+  // This ensures unique indices and makes the mapping intuitive (slave 3 -> _3 suffix)
+  const index = slaveAddress;
+
+  console.log(`addMeterToConfig: Adding meter "${meterName}" with index ${index} (slave address: ${slaveAddress})`);
 
   // Calculate base key for new data points
   let maxDataKey = 0;
