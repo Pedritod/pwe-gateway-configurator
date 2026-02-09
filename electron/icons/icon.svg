@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4a90d9"/>
+      <stop offset="100%" style="stop-color:#1e3a5f"/>
+    </linearGradient>
+  </defs>
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="url(#bg)"/>
+  <!-- Gateway icon -->
+  <g fill="white">
+    <!-- Main box -->
+    <rect x="96" y="160" width="320" height="200" rx="20" fill="none" stroke="white" stroke-width="16"/>
+    <!-- Signal waves -->
+    <path d="M256 80 Q256 120 216 120" fill="none" stroke="white" stroke-width="12" stroke-linecap="round"/>
+    <path d="M256 80 Q256 120 296 120" fill="none" stroke="white" stroke-width="12" stroke-linecap="round"/>
+    <path d="M256 60 Q256 110 196 110" fill="none" stroke="white" stroke-width="12" stroke-linecap="round"/>
+    <path d="M256 60 Q256 110 316 110" fill="none" stroke="white" stroke-width="12" stroke-linecap="round"/>
+    <!-- LEDs -->
+    <circle cx="160" cy="220" r="16" fill="#4ade80"/>
+    <circle cx="220" cy="220" r="16" fill="#4ade80"/>
+    <circle cx="280" cy="220" r="16" fill="#facc15"/>
+    <circle cx="340" cy="220" r="16" fill="#4ade80"/>
+    <!-- Ports -->
+    <rect x="140" y="280" width="50" height="40" rx="5" fill="white" opacity="0.3"/>
+    <rect x="210" y="280" width="50" height="40" rx="5" fill="white" opacity="0.3"/>
+    <rect x="280" y="280" width="50" height="40" rx="5" fill="white" opacity="0.3"/>
+    <!-- Text -->
+    <text x="256" y="420" font-family="Arial, sans-serif" font-size="48" font-weight="bold" fill="white" text-anchor="middle">IOT</text>
+  </g>
+</svg>
