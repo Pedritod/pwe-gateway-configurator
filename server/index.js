@@ -2576,15 +2576,19 @@ app.post('/api/n720-save-current', async (req, res) => {
         let templateObj;
         if (isGatewayTopic) {
           // ThingsBoard gateway format: {"Device":[{"ts":"sys_timestamp_ms","values":{...}}]}
+          // Includes device name wrapper for multi-device support
           templateObj = {};
           templateObj[meter.name] = [{
             ts: 'sys_timestamp_ms',
             values: fieldsObj
           }];
         } else {
-          // Non-gateway topic format: flat structure {"v_l1":"v_l1_1","v_l2":"v_l2_1",...}
-          // No device name wrapper, no ts/values wrapper - just direct field mappings
-          templateObj = fieldsObj;
+          // Non-gateway topic format: {"ts":"sys_timestamp_ms","values":{...}}
+          // Includes ts and values, but NO device name wrapper
+          templateObj = {
+            ts: 'sys_timestamp_ms',
+            values: fieldsObj
+          };
         }
         templateLines.push(`Report${i}:${JSON.stringify(templateObj)}`);
 
