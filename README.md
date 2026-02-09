@@ -11,11 +11,9 @@ A web application for configuring USR IOT N510 and N720 gateways with energy met
 
 ---
 
-## 🌐 Web App (Recommended for Development)
+## Quick Start
 
-Run the app in your browser. Requires Node.js installed.
-
-### Quick Start
+Requires Node.js installed.
 
 ```bash
 # Clone the repo
@@ -38,23 +36,17 @@ Open **http://localhost:5173** in your browser.
 
 ---
 
-## 🖥️ Windows Portable App
+## Production Build
 
-Build a standalone Windows executable that requires NO installation and NO Node.js.
-
-See **[windows/BUILD.md](windows/BUILD.md)** for complete instructions.
-
-### Quick Build (on Windows)
-
-```powershell
-cd pwe-gateway-configurator/gateway-configurator
-npm install
-cd windows
-npm install
+```bash
+# Build frontend
 npm run build
+
+# Run production server
+node server/index.js
 ```
 
-Output: `windows/release/Gateway Configurator-1.0.0-Portable.exe` (~100MB)
+Open **http://localhost:3001** in your browser.
 
 ---
 
@@ -68,9 +60,6 @@ gateway-configurator/
 │   └── config/             # Meter configurations
 ├── server/                 # Express backend
 │   └── index.js            # API server
-├── windows/                # Windows app build
-│   ├── electron/           # Electron wrapper
-│   └── BUILD.md            # Build instructions
 └── package.json
 ```
 
