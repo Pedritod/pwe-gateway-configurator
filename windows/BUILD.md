@@ -2,101 +2,81 @@
 
 This document explains how to build a **fully standalone** Windows portable executable that requires **NO Node.js installation** on the target PC.
 
-## Prerequisites (Build Machine Only)
+---
 
-1. **Node.js** v18 or higher - https://nodejs.org/
-2. **Windows** (for building Windows executables) or cross-compilation setup
+## 🚀 Quick Build (Copy & Paste on Windows)
 
-## Quick Build (One Command)
+Open **PowerShell** or **Command Prompt** on a Windows PC and run:
 
-```bash
+```powershell
+# Clone the repo (first time only)
+git clone https://github.com/Pedritod/pwe-gateway-configurator.git
+
+# Navigate to project
+cd pwe-gateway-configurator/gateway-configurator
+
+# Install main dependencies
+npm install
+
+# Navigate to windows folder and build
 cd windows
 npm install
 npm run build
 ```
 
-This will:
-1. Build the frontend (React app)
-2. Compile the server into a standalone `server.exe` using `pkg`
-3. Package everything into a portable Electron app
+**Output:** `windows/release/Gateway Configurator-1.0.0-Portable.exe` (~100MB)
 
-Output: `windows/release/Gateway Configurator-1.0.0-Portable.exe`
+---
 
-## Step-by-Step Build
+## 📦 After Code Changes - Rebuild
 
-### Step 1: Install Dependencies
+Every time you make changes to the app, rebuild with:
 
-```bash
-# From the project root
-cd gateway-configurator
+```powershell
+# From the gateway-configurator folder
+git pull                    # Get latest changes
+npm install                 # Update dependencies if needed
 
-# Install main project dependencies
-npm install
-
-# Install Windows app dependencies
 cd windows
-npm install
+npm run build               # Rebuild the exe
 ```
 
-### Step 2: Build Frontend
+The new exe will be in `windows/release/`
 
-```bash
-# From windows folder
-npm run build:frontend
-```
+---
 
-This builds the React frontend to `../dist/`
+## Prerequisites (Build Machine Only)
 
-### Step 3: Compile Server to Standalone EXE
+1. **Windows PC** - Required for building Windows executables
+2. **Node.js v18+** - Download from https://nodejs.org/
+3. **Git** - Download from https://git-scm.com/
 
-```bash
-npm run build:server
-```
+---
 
-This uses `pkg` to compile the Node.js server into a standalone `server.exe` that includes:
-- Node.js runtime
-- All server dependencies
-- No external Node.js installation needed!
+## What the Build Does
 
-Output: `windows/dist/server.exe`
+1. **Builds frontend** - Compiles React app to `dist/`
+2. **Compiles server** - Uses `pkg` to bundle Node.js + server into `server.exe`
+3. **Packages Electron** - Creates portable exe with everything bundled
 
-### Step 4: Build Electron App
+The final exe includes:
+- Electron (Chromium browser) ~60MB
+- Compiled server.exe (Node.js runtime) ~30MB
+- Frontend assets ~2MB
+- **Total: ~100MB**
 
-```bash
-npm run build:electron
-```
-
-This packages everything into a portable Windows executable.
-
-Output: `windows/release/Gateway Configurator-1.0.0-Portable.exe`
+---
 
 ## Build Commands Reference
 
 | Command | Description |
 |---------|-------------|
-| `npm run build` | Full build (frontend + server + electron) |
+| `npm run build` | **Full build** (frontend + server + electron) |
 | `npm run build:frontend` | Build React frontend only |
 | `npm run build:server` | Compile server to standalone exe |
 | `npm run build:electron` | Package Electron app |
-| `npm run build:dir` | Build unpacked (for debugging) |
-| `npm run dev` | Run Electron in development mode |
 
-## App Icons
-
-Before building for distribution, create proper icons:
-
-1. Create a 512x512 PNG icon
-2. Convert to required formats:
-   - `icon.png` - 512x512 PNG
-   - `icon.ico` - Windows icon (256x256, 128x128, 64x64, 48x48, 32x32, 16x16)
-
-3. Place icons in `windows/electron/icons/` folder
-
-**Online converters:**
-- PNG to ICO: https://icoconvert.com/
-- SVG to PNG: https://svgtopng.com/
-
-An SVG template is provided at `electron/icons/icon.svg`
+---
 
 ## Output Files
 
@@ -105,76 +85,75 @@ After successful build:
 ```
 windows/
 ├── dist/
-│   └── server.exe          # Standalone server (compiled with pkg)
+│   └── server.exe                              # Standalone server
 └── release/
-    └── Gateway Configurator-1.0.0-Portable.exe  # Final portable app (~100MB)
+    └── Gateway Configurator-1.0.0-Portable.exe # Final app (~100MB)
 ```
+
+---
 
 ## Running the Portable App
 
 1. Copy `Gateway Configurator-1.0.0-Portable.exe` to any Windows PC
 2. Double-click to run
-3. **No installation required!**
-4. **No Node.js required!**
+3. ✅ **No installation required!**
+4. ✅ **No Node.js required!**
 
 The app will:
 - Start a background server for gateway communication
 - Open the configurator window
 - Add a system tray icon (minimize to tray)
 
-## Features
+---
 
-- **Portable**: Single exe file, no installation
-- **Standalone**: No Node.js or other dependencies needed
-- **System Tray**: Runs in background, accessible from tray
-- **Auto-restart**: Server automatically restarts if it crashes
-- **UDP Discovery**: Scans local network for gateways
+## App Icons (Optional)
+
+Before building for distribution, you can add custom icons:
+
+1. Create a 512x512 PNG icon
+2. Convert to ICO at https://icoconvert.com/
+3. Place `icon.png` and `icon.ico` in `windows/electron/icons/`
+
+An SVG template is provided at `electron/icons/icon.svg`
+
+---
 
 ## Troubleshooting
 
-### App won't start
-- Try running as Administrator
-- Check if port 3001 is already in use
-- Check Windows Defender/antivirus isn't blocking
+### Build fails
+```powershell
+npm cache clean --force
+rm -rf node_modules
+npm install
+npm run build
+```
 
-### Server won't start
-- Check Windows Firewall allows the app
-- Port 3001 might be in use by another application
+### App won't start
+- Run as Administrator
+- Check if port 3001 is in use
+- Check Windows Defender isn't blocking
 
 ### Gateway discovery not working
-- Ensure PC is on the same network as gateways
+- Ensure PC is on same network as gateways
 - Check firewall allows UDP port 1901
 - Disable VPN if active
 
-### Build fails with pkg
-- Ensure Node.js v18+ is installed
-- Try: `npm cache clean --force && npm install`
+---
 
-## Development Mode
+## Development Mode (No Build Needed)
 
-For development without building:
+For quick testing without building the exe:
 
-```bash
-# Terminal 1: Start the server
-cd gateway-configurator
-npm run server
-
-# Terminal 2: Start frontend
+```powershell
+# Terminal 1 - From gateway-configurator folder
 npm run dev
 
-# Open http://localhost:5173
+# Opens at http://localhost:5173
 ```
 
-Or run Electron in dev mode:
-
-```bash
-cd windows
-npm run dev
-```
+---
 
 ## Distribution
-
-To distribute the app:
 
 1. Build: `npm run build`
 2. Find: `windows/release/Gateway Configurator-1.0.0-Portable.exe`
