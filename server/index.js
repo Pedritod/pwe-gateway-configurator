@@ -2595,6 +2595,7 @@ app.post('/api/n720-save-current', async (req, res) => {
         // Sanitize name: only a-z, A-Z, 0-9, _ allowed, max 20 chars
         const sanitizedName = meter.name.replace(/[^a-zA-Z0-9_]/g, '_').substring(0, 20);
         groups.push({
+          enable: 1,  // IMPORTANT: Report group must be enabled to show up in UI
           name: sanitizedName,
           link: 'MQTT1',
           topic: topic.startsWith('/') ? topic.substring(1) : topic,

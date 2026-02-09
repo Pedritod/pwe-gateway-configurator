@@ -437,6 +437,7 @@ export function generateN720EdgeReportConfig(
   reportingInterval: number = 60
 ): string {
   interface N720ReportGroup {
+    enable: number;  // IMPORTANT: Must be 1 for report group to show up in UI
     name: string;
     link: string;
     topic: string;
@@ -477,6 +478,7 @@ export function generateN720EdgeReportConfig(
     const cleanTopic = reportTopic.startsWith('/') ? reportTopic.substring(1) : reportTopic;
 
     groups.push({
+      enable: 1,                          // IMPORTANT: Must be enabled to show up in UI
       name: `${truncatedName}_report`,   // Group name: <MeterName>_report (max 20 chars)
       link: 'MQTT1',                      // Use MQTT1 channel
       topic: cleanTopic,                  // MQTT topic
