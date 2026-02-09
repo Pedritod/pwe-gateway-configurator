@@ -1,50 +1,118 @@
-# React + TypeScript + Vite
+# Gateway Configurator
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A web application for configuring USR IOT N510 and N720 gateways with energy meters.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- 🔍 **Auto-discovery** - Scans local network for gateways via UDP
+- ⚡ **Energy Meters** - Configure XMC34F, EM4371, Sfere720, EnergyNG9, TAC4300
+- 📡 **MQTT Setup** - Configure ThingsBoard or custom MQTT brokers
+- 🌐 **Works with both N510 and N720** gateways
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+## 🌐 Web App (Recommended for Development)
 
-- Configure the top-level `parserOptions` property like this:
+Run the app in your browser. Requires Node.js installed.
 
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ['./tsconfig.node.json', './tsconfig.app.json'],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-})
+### Quick Start
+
+```bash
+# Clone the repo
+git clone https://github.com/Pedritod/pwe-gateway-configurator.git
+cd pwe-gateway-configurator/gateway-configurator
+
+# Install dependencies
+npm install
+
+# Start the app
+npm run dev
 ```
 
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
+Open **http://localhost:5173** in your browser.
 
-```js
-// eslint.config.js
-import react from 'eslint-plugin-react'
+### What's Running
 
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: '18.3' } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs['jsx-runtime'].rules,
-  },
-})
+- **Frontend**: React app on port 5173
+- **Backend**: Express server on port 3001 (handles gateway communication)
+
+---
+
+## 🖥️ Windows Portable App
+
+Build a standalone Windows executable that requires NO installation and NO Node.js.
+
+See **[windows/BUILD.md](windows/BUILD.md)** for complete instructions.
+
+### Quick Build (on Windows)
+
+```powershell
+cd pwe-gateway-configurator/gateway-configurator
+npm install
+cd windows
+npm install
+npm run build
 ```
+
+Output: `windows/release/Gateway Configurator-1.0.0-Portable.exe` (~100MB)
+
+---
+
+## Project Structure
+
+```
+gateway-configurator/
+├── src/                    # React frontend
+│   ├── components/         # UI components
+│   ├── services/           # API services
+│   └── config/             # Meter configurations
+├── server/                 # Express backend
+│   └── index.js            # API server
+├── windows/                # Windows app build
+│   ├── electron/           # Electron wrapper
+│   └── BUILD.md            # Build instructions
+└── package.json
+```
+
+---
+
+## Supported Gateways
+
+| Gateway | Model | Features |
+|---------|-------|----------|
+| N510 | USR-N510 | Basic Modbus gateway |
+| N720 | USR-N720 | Edge computing gateway |
+
+## Supported Meters
+
+| Meter | Type | Registers |
+|-------|------|-----------|
+| XMC34F | 3-Phase | 28 data points |
+| EM4371 | Energy | 27 data points |
+| Sfere720 | Quality | 40+ data points |
+| EnergyNG9 | 9-Channel | 45+ data points |
+| TAC4300 | TAC | 36 data points |
+
+---
+
+## Development
+
+```bash
+# Run frontend only (no server)
+npm run dev:frontend
+
+# Run server only
+npm run server
+
+# Run both (recommended)
+npm run dev
+
+# Build frontend for production
+npm run build
+```
+
+---
+
+## License
+
+MIT
