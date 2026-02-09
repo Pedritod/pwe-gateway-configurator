@@ -16,9 +16,12 @@ const PORT = process.env.PORT || 3001;
 app.use(cors());
 app.use(express.json());
 
-const distPath = process.env.NODE_ENV === 'production'
-  ? '/app/dist'
-  : path.join(__dirname, '..', 'dist');
+// Determine static files path:
+// 1. DIST_PATH env var (set by Electron app)
+// 2. Production default: /app/dist (Docker)
+// 3. Development: ../dist relative to server
+const distPath = process.env.DIST_PATH
+  || (process.env.NODE_ENV === 'production' ? '/app/dist' : path.join(__dirname, '..', 'dist'));
 
 // Discovery keyword
 const DISCOVERY_KEYWORD = Buffer.from('FF010102', 'hex');
