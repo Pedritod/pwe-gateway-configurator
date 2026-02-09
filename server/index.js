@@ -2582,11 +2582,9 @@ app.post('/api/n720-save-current', async (req, res) => {
             values: fieldsObj
           }];
         } else {
-          // Non-gateway topic format: {"ts":"sys_timestamp_ms","values":{...}}
-          templateObj = {
-            ts: 'sys_timestamp_ms',
-            values: fieldsObj
-          };
+          // Non-gateway topic format: flat structure {"v_l1":"v_l1_1","v_l2":"v_l2_1",...}
+          // No device name wrapper, no ts/values wrapper - just direct field mappings
+          templateObj = fieldsObj;
         }
         templateLines.push(`Report${i}:${JSON.stringify(templateObj)}`);
 
